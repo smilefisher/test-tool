@@ -373,8 +373,13 @@ export default function NewToolPage() {
                       </div>
                       <textarea
                         value={step.command}
-                        onChange={(e) => updateStep(index, 'command', e.target.value)}
-                        rows={3}
+                        onChange={(e) => {
+                          updateStep(index, 'command', e.target.value);
+                          e.target.style.height = 'auto';
+                          e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+                        }}
+                        rows={2}
+                        style={{ minHeight: '60px', height: 'auto', maxHeight: '200px' }}
                         placeholder={
                           step.db_type === 'mysql'
                             ? 'DELETE FROM users WHERE id = {{userId}}'
@@ -382,7 +387,7 @@ export default function NewToolPage() {
                             ? 'DEL user:{{userId}}:token'
                             : 'db.users.deleteOne({userId: "{{userId}}"})'
                         }
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono resize-none"
+                        className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-sm font-mono resize-none transition-all"
                       />
                     </div>
                   );
