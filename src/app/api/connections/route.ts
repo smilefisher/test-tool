@@ -14,7 +14,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, db_type, host, port, username, password, database_name, uri } = body;
+    const { name, db_type, host, port, username, password, database_name, uri, db } = body;
 
     if (!name || !db_type) {
       return NextResponse.json({ error: 'Name and db_type are required' }, { status: 400 });
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid db_type' }, { status: 400 });
     }
 
-    const id = await createConnection({ name, db_type, host, port, username, password, database_name, uri });
+    const id = await createConnection({ name, db_type, host, port, username, password, database_name, uri, db });
     return NextResponse.json({ id }, { status: 201 });
   } catch (error) {
     console.error('Error creating connection:', error);

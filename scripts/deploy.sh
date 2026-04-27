@@ -1,49 +1,60 @@
 #!/bin/bash
+set -e
 
-# 配置
 REMOTE_HOST="192.168.1.61"
 APP_NAME="test-tool"
 REMOTE_USER="root"
-REMOTE_DIR="/opt/${APP_NAME}"
+PROJECT_DIR="/home/chenning/project/test-tool"
+TARBALL="${PROJECT_DIR}/${APP_NAME}.tar"
 
-# 本地打包
-echo "=== 打包项目 ==="
-tar --exclude='node_modules' \
-    --exclude='.next' \
-    --exclude='data/tools.json' \
-    -czf /tmp/${APP_NAME}.tar.gz -C /home/chenning/project/${APP_NAME} .
+# 本地编译
+echo "=== 本地编译 ==="
+cd ${PROJECT_DIR}
+pnpm install
+pnpm run build
+
+# 本地构建 Docker 镜像
+echo "=== 本地构建 Docker 镜像 ==="
+sudo docker build -t ${APP_NAME}:latest .
+
+# 打包镜像
+echo "=== 打包镜像 ==="
+sudo docker save ${APP_NAME}:latest -o ${TARBALL}
 
 # 传输到远程
-echo "=== 传输到 ${REMOTE_HOST} ==="
-scp /tmp/${APP_NAME}.tar.gz ${REMOTE_USER}@${REMOTE_HOST}:/tmp/
+echo "=== 传输镜像到 ${REMOTE_HOST} ==="
+sudo scp -o StrictHostKeyChecking=no ${TARBALL} ${REMOTE_USER}@${REMOTE_HOST}:/tmp/
 
 # 远程部署
 echo "=== 远程部署 ==="
-ssh ${REMOTE_USER}@${REMOTE_HOST} << 'ENDSSH'
+ssh -t -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} << 'ENDSSH'
   set -e
 
   APP_NAME="test-tool"
   APP_DIR="/opt/${APP_NAME}"
 
-  # 创建目录
   mkdir -p ${APP_DIR}/data
+  sudo chown -R 1001:1001 ${APP_DIR}/data
+  sudo chmod -R 777 ${APP_DIR}/data
 
-  # 解压
-  tar -xzf /tmp/${APP_NAME}.tar.gz -C ${APP_DIR}
-
-  # 停止旧容器
   cd ${APP_DIR}
-  docker compose down 2>/dev/null || true
+  sudo docker compose down 2>/dev/null || true
+  sudo docker stop ${APP_NAME} 2>/dev/null || true
+  sudo docker rm ${APP_NAME} 2>/dev/null || true
 
-  # 构建并启动
-  docker compose up -d --build
+  sudo docker load -i /tmp/${APP_NAME}.tar
+
+  sudo docker run -d \
+    --name ${APP_NAME} \
+    -p 1001:3000 \
+    -v ${APP_DIR}/data:/app/data \
+    --restart unless-stopped \
+    ${APP_NAME}:latest
 
   echo ""
   echo "=== 部署完成 ==="
   echo "访问 http://$(hostname -I | awk '{print $1}'):1001"
 ENDSSH
 
-# 清理
-rm -f /tmp/${APP_NAME}.tar.gz
-
+rm -f ${TARBALL}
 echo "=== 完成 ==="

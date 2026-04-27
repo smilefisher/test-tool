@@ -14,7 +14,7 @@ export interface ExecuteResult {
 }
 
 export async function executeRedis(command: string, connection?: Connection | null): Promise<unknown> {
-  const config = connection || { host: 'localhost', port: 6379, db: 0 };
+  const config = connection || { host: 'localhost', port: 6379, db: 0, password: undefined };
   const redis = new Redis({
     host: config.host || 'localhost',
     port: (config.port as number) || 6379,
@@ -65,7 +65,7 @@ export async function executeMysql(command: string, connection?: Connection | nu
 }
 
 export async function executeMongodb(command: string, connection?: Connection | null): Promise<unknown> {
-  const config = connection || { uri: 'mongodb://localhost:27017' };
+  const config = connection || { uri: 'mongodb://localhost:27017', database_name: null };
   const client = new MongoClient(config.uri || 'mongodb://localhost:27017');
 
   try {
