@@ -49,6 +49,20 @@ export default function ToolDetail() {
 
   async function handleExecute() {
     if (!tool) return;
+
+    const missingParams = tool.params
+      .filter(p => p.required)
+      .filter(p => {
+        const value = paramValues[p.name];
+        return value === undefined || value === null || value === '';
+      })
+      .map(p => p.label);
+
+    if (missingParams.length > 0) {
+      setError(`缺少必填参数: ${missingParams.join(', ')}`);
+      return;
+    }
+
     setExecuting(true);
     setResults([]);
     setError(null);
@@ -121,7 +135,7 @@ export default function ToolDetail() {
 
       <main className="max-w-3xl mx-auto px-6 py-8">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-800 mb-2">{tool.name}</h1>
+          <h1 className="text-2xl font-bold text-slate-800 mb-2 break-words">{tool.name}</h1>
           <p className="text-slate-500">{tool.description || '暂无描述'}</p>
         </div>
 
@@ -224,12 +238,6 @@ export default function ToolDetail() {
             </>
           )}
         </button>
-
-        {error && (
-          <div className="mt-6 bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-            <p className="text-red-700 font-medium">{error}</p>
-          </div>
-        )}
 
         {results.length > 0 && (
           <section className="mt-6 bg-white rounded-xl p-6 shadow-sm border border-slate-100">
