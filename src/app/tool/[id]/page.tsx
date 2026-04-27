@@ -60,7 +60,11 @@ export default function ToolDetail() {
         body: JSON.stringify({ params: paramValues }),
       });
       const data = await res.json();
-      setResults(data.results || []);
+      if (!res.ok) {
+        setError(data.error || '执行失败');
+      } else {
+        setResults(data.results || []);
+      }
     } catch (err) {
       setError('执行失败');
     } finally {
@@ -85,7 +89,7 @@ export default function ToolDetail() {
     );
   }
 
-  if (error || !tool) {
+  if (!tool) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
@@ -121,7 +125,7 @@ export default function ToolDetail() {
           <p className="text-slate-500">{tool.description || '暂无描述'}</p>
         </div>
 
-        {tool.params.length > 0 && (
+        {tool.params.length > 0 ? (
           <section className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">
             <h2 className="text-lg font-semibold text-slate-800 mb-4">参数</h2>
             <div className="space-y-4">
@@ -141,8 +145,17 @@ export default function ToolDetail() {
                 </div>
               ))}
             </div>
+            {error && (
+              <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-red-700 text-sm">{error}</p>
+              </div>
+            )}
           </section>
-        )}
+        ) : tool.steps.length > 0 ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-6">
+            <p className="text-amber-700">此工具没有定义参数，请联系管理员添加参数。</p>
+          </div>
+        ) : null}
 
         {tool.steps.length > 0 && (
           <section className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">
@@ -211,6 +224,12 @@ export default function ToolDetail() {
             </>
           )}
         </button>
+
+        {error && (
+          <div className="mt-6 bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+            <p className="text-red-700 font-medium">{error}</p>
+          </div>
+        )}
 
         {results.length > 0 && (
           <section className="mt-6 bg-white rounded-xl p-6 shadow-sm border border-slate-100">

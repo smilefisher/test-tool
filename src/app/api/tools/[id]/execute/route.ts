@@ -21,6 +21,21 @@ export async function POST(
       return NextResponse.json({ error: 'Params are required' }, { status: 400 });
     }
 
+    const missingParams = tool.params
+      .filter(p => p.required)
+      .filter(p => {
+        const value = executeParams[p.name];
+        return value === undefined || value === null || value === '';
+      })
+      .map(p => p.label);
+
+    if (missingParams.length > 0) {
+      return NextResponse.json(
+        { error: `缺少必填参数: ${missingParams.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
     const results = await executeTool(
       tool.steps.map(s => ({
         db_type: s.db_type,
