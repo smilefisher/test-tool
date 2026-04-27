@@ -10,6 +10,21 @@ const DB_COLORS: Record<string, string> = {
   mongodb: 'bg-green-100 text-green-700',
 };
 
+const ICON_CONFIGS = [
+  { bg: 'from-blue-500 to-blue-600', shadow: 'shadow-blue-500/30', icon: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' },
+  { bg: 'from-red-500 to-red-600', shadow: 'shadow-red-500/30', icon: 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { bg: 'from-green-500 to-green-600', shadow: 'shadow-green-500/30', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { bg: 'from-purple-500 to-purple-600', shadow: 'shadow-purple-500/30', icon: 'M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2' },
+  { bg: 'from-amber-500 to-amber-600', shadow: 'shadow-amber-500/30', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+  { bg: 'from-pink-500 to-pink-600', shadow: 'shadow-pink-500/30', icon: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z' },
+  { bg: 'from-cyan-500 to-cyan-600', shadow: 'shadow-cyan-500/30', icon: 'M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
+  { bg: 'from-indigo-500 to-indigo-600', shadow: 'shadow-indigo-500/30', icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4' },
+];
+
+function getIconConfig(id: number) {
+  return ICON_CONFIGS[id % ICON_CONFIGS.length];
+}
+
 export default function Home() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [favorites, setFavorites] = useState<number[]>([]);
@@ -153,11 +168,16 @@ export default function Home() {
                 <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-50 to-purple-50 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
 
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center shadow-md shadow-blue-500/30 flex-shrink-0">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                    </svg>
-                  </div>
+                  {(() => {
+                    const icon = getIconConfig(tool.id);
+                    return (
+                      <div className={`w-12 h-12 bg-gradient-to-br ${icon.bg} rounded-lg flex items-center justify-center shadow-md ${icon.shadow} flex-shrink-0`}>
+                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon.icon} />
+                        </svg>
+                      </div>
+                    );
+                  })()}
                   <div className="flex-1 min-w-0">
                     <h3 className="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors truncate">
                       {tool.name}

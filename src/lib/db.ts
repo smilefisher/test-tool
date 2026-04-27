@@ -181,6 +181,7 @@ export async function getToolById(id: number): Promise<ToolWithDetails | null> {
 }
 
 export async function createTool(data: { name: string; description?: string; params?: Omit<ToolParam, 'id' | 'tool_id'>[]; steps?: Omit<ToolStep, 'id' | 'tool_id'>[] }): Promise<number> {
+  console.log('createTool received:', JSON.stringify(data));
   const db = loadDb();
   const id = db.nextIds.tools++;
   const now = new Date().toISOString();
@@ -194,6 +195,7 @@ export async function createTool(data: { name: string; description?: string; par
   });
 
   if (data.params) {
+    console.log('Saving params:', JSON.stringify(data.params));
     data.params.forEach(p => {
       const paramId = db.nextIds.tool_params++;
       db.tool_params.push({
@@ -202,6 +204,8 @@ export async function createTool(data: { name: string; description?: string; par
         tool_id: id,
       });
     });
+  } else {
+    console.log('No params to save');
   }
 
   if (data.steps) {
@@ -217,6 +221,7 @@ export async function createTool(data: { name: string; description?: string; par
   }
 
   saveDb();
+  console.log('Tool saved, id:', id);
   return id;
 }
 

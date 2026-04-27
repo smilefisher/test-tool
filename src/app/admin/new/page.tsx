@@ -102,6 +102,13 @@ export default function NewToolPage() {
       return;
     }
 
+    const incompleteParams = params.filter(p => p.name.trim() || p.label.trim())
+      .filter(p => !p.name.trim() || !p.label.trim());
+    if (incompleteParams.length > 0) {
+      alert('参数填写不完整：请确保每个参数的名称和标签都已填写');
+      return;
+    }
+
     setSaving(true);
     try {
       const validParams = params.filter(p => p.name.trim() && p.label.trim());
@@ -204,67 +211,73 @@ export default function NewToolPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {params.map((param, index) => (
-                      <tr key={index}>
-                        <td className="py-3 pr-3">
-                          <input
-                            type="text"
-                            value={param.name}
-                            onChange={(e) => updateParam(index, 'name', e.target.value)}
-                            placeholder="userId"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
-                          />
-                        </td>
-                        <td className="py-3 pr-3">
-                          <input
-                            type="text"
-                            value={param.label}
-                            onChange={(e) => updateParam(index, 'label', e.target.value)}
-                            placeholder="用户ID"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                          />
-                        </td>
-                        <td className="py-3 pr-3">
-                          <select
-                            value={param.param_type}
-                            onChange={(e) => updateParam(index, 'param_type', e.target.value)}
-                            className="px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                          >
-                            {PARAM_TYPES.map((t) => (
-                              <option key={t.value} value={t.value}>{t.label}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-3 pr-3">
-                          <input
-                            type="text"
-                            value={param.default_value || ''}
-                            onChange={(e) => updateParam(index, 'default_value', e.target.value || null)}
-                            placeholder="无"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                          />
-                        </td>
-                        <td className="py-3 pr-3">
-                          <input
-                            type="checkbox"
-                            checked={param.required}
-                            onChange={(e) => updateParam(index, 'required', e.target.checked)}
-                            className="w-4 h-4 text-blue-500 border-slate-300 rounded focus:ring-blue-500"
-                          />
-                        </td>
-                        <td className="py-3">
-                          <button
-                            type="button"
-                            onClick={() => removeParam(index)}
-                            className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {params.map((param, index) => {
+                      const hasPartial = (param.name.trim() || param.label.trim()) && !(param.name.trim() && param.label.trim());
+                      return (
+                        <tr key={index}>
+                          <td className="py-3 pr-3">
+                            <input
+                              type="text"
+                              value={param.name}
+                              onChange={(e) => updateParam(index, 'name', e.target.value)}
+                              placeholder="userId"
+                              className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono ${hasPartial ? 'border-red-400' : 'border-slate-200'}`}
+                            />
+                          </td>
+                          <td className="py-3 pr-3">
+                            <input
+                              type="text"
+                              value={param.label}
+                              onChange={(e) => updateParam(index, 'label', e.target.value)}
+                              placeholder="用户ID"
+                              className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${hasPartial ? 'border-red-400' : 'border-slate-200'}`}
+                            />
+                            {hasPartial && (
+                              <p className="text-xs text-red-500 mt-1">名称和标签都不能为空</p>
+                            )}
+                          </td>
+                          <td className="py-3 pr-3">
+                            <select
+                              value={param.param_type}
+                              onChange={(e) => updateParam(index, 'param_type', e.target.value)}
+                              className="px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                            >
+                              {PARAM_TYPES.map((t) => (
+                                <option key={t.value} value={t.value}>{t.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-3 pr-3">
+                            <input
+                              type="text"
+                              value={param.default_value || ''}
+                              onChange={(e) => updateParam(index, 'default_value', e.target.value || null)}
+                              placeholder="无"
+                              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                            />
+                          </td>
+                          <td className="py-3 pr-3">
+                            <input
+                              type="checkbox"
+                              checked={param.required}
+                              onChange={(e) => updateParam(index, 'required', e.target.checked)}
+                              className="w-4 h-4 text-blue-500 border-slate-300 rounded focus:ring-blue-500"
+                            />
+                          </td>
+                          <td className="py-3">
+                            <button
+                              type="button"
+                              onClick={() => removeParam(index)}
+                              className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -136,6 +136,13 @@ export default function EditToolPage() {
       return;
     }
 
+    const incompleteParams = paramsList.filter(p => p.name.trim() || p.label.trim())
+      .filter(p => !p.name.trim() || !p.label.trim());
+    if (incompleteParams.length > 0) {
+      alert('参数填写不完整：请确保每个参数的名称和标签都已填写');
+      return;
+    }
+
     setSaving(true);
     try {
       const validParams = paramsList.filter(p => p.name.trim() && p.label.trim());

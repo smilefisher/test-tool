@@ -16,6 +16,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { name, description, params, steps } = body;
 
+    console.log('Creating tool with:', { name, description, params, steps });
+
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }

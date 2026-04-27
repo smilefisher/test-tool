@@ -57,7 +57,16 @@ export async function executeMysql(command: string, connection?: Connection | nu
 
   try {
     const normalizedSql = command.trim();
-    const [result] = await pool.execute(normalizedSql);
+    if (normalizedSql.includes('\n')) {
+      const results: unknown[] = [];
+      const statements = normalizedSql.split('\n').filter(s => s.trim());
+      for (const stmt of statements) {
+        const [result] = await pool.query(stmt);
+        results.push(result);
+      }
+      return results;
+    }
+    const [result] = await pool.query(normalizedSql);
     return result;
   } finally {
     await pool.end();
@@ -70,36 +79,53 @@ export async function executeMongodb(command: string, connection?: Connection | 
 
   try {
     await client.connect();
-    let dbName = config.database_name || config.uri?.split('/').pop()?.split('?')[0] || 'test';
-    let normalizedCmd = command.trim();
+    let defaultDb = config.database_name || config.uri?.split('/').pop()?.split('?')[0] || 'test';
+    const normalizedCmd = command.trim();
 
-    const useMatch = normalizedCmd.match(/^use\s+(\w+)\s*;?\s*(.*)$/i);
-    if (useMatch) {
-      dbName = useMatch[1];
-      normalizedCmd = useMatch[2].trim();
+    if (normalizedCmd.includes('\n')) {
+      const results: unknown[] = [];
+      const commands = normalizedCmd.split('\n').filter(c => c.trim());
+      for (const cmd of commands) {
+        const result = await executeSingleMongoCmd(client, cmd, defaultDb);
+        results.push(result);
+      }
+      return results;
     }
 
-    const db = client.db(dbName);
-
-    const match = normalizedCmd.match(/^db\.(\w+)\.(\w+)\(([\s\S]*)\)$/);
-    if (!match) {
-      throw new Error('Invalid MongoDB command format. Expected: use db; db.collection.method({...})');
-    }
-
-    const [, collection, method, argsStr] = match;
-    const args = JSON.parse(argsStr);
-
-    const coll = db.collection(collection);
-    const mongoMethod = (coll as unknown as Record<string, Function>)[method];
-
-    if (typeof mongoMethod !== 'function') {
-      throw new Error(`Unknown MongoDB method: ${method}`);
-    }
-
-    return await mongoMethod.call(coll, args);
+    return await executeSingleMongoCmd(client, normalizedCmd, defaultDb);
   } finally {
     await client.close();
   }
+}
+
+async function executeSingleMongoCmd(client: MongoClient, cmd: string, defaultDb: string): Promise<unknown> {
+  let dbName = defaultDb;
+  let normalizedCmd = cmd.trim();
+
+  const useMatch = normalizedCmd.match(/^use\s+(\w+)\s*;?\s*(.*)$/i);
+  if (useMatch) {
+    dbName = useMatch[1];
+    normalizedCmd = useMatch[2].trim();
+  }
+
+  const db = client.db(dbName);
+
+  const match = normalizedCmd.match(/^db\.(\w+)\.(\w+)\(([\s\S]*)\)$/);
+  if (!match) {
+    throw new Error('Invalid MongoDB command format. Expected: use db; db.collection.method({...})');
+  }
+
+  const [, collection, method, argsStr] = match;
+  const args = JSON.parse(argsStr);
+
+  const coll = db.collection(collection);
+  const mongoMethod = (coll as unknown as Record<string, Function>)[method];
+
+  if (typeof mongoMethod !== 'function') {
+    throw new Error(`Unknown MongoDB method: ${method}`);
+  }
+
+  return await mongoMethod.call(coll, args);
 }
 
 export function replaceParams(template: string, params: Record<string, string>): string {
