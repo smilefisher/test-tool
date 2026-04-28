@@ -160,54 +160,58 @@ export default function Home() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {displayedTools.map((tool, index) => (
-              <Link
+              <div
                 key={tool.id}
-                href={`/tool/${tool.id}`}
-                className="group bg-white rounded-xl p-6 shadow-sm hover:shadow-lg transition-all border border-slate-200 hover:border-blue-300 overflow-hidden relative"
+                className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-all border border-slate-200 hover:border-blue-300 overflow-hidden relative"
               >
                 <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-50 to-purple-50 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
 
-                <div className="flex items-center gap-3 mb-4">
-                  {(() => {
-                    const icon = getIconConfig(tool.id);
-                    return (
-                      <div className={`w-12 h-12 bg-gradient-to-br ${icon.bg} rounded-lg flex items-center justify-center shadow-md ${icon.shadow} flex-shrink-0`}>
-                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon.icon} />
-                        </svg>
-                      </div>
-                    );
-                  })()}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors truncate">
-                      {tool.name}
-                    </h3>
-                    <p className="text-xs text-slate-400 font-mono">
-                      #{tool.id} · {new Date(tool.updated_at).toLocaleDateString('zh-CN')}
-                    </p>
+                <Link
+                  href={`/tool/${tool.id}`}
+                  className="block p-6"
+                >
+                  <div className="flex items-center gap-3 mb-4">
+                    {(() => {
+                      const icon = getIconConfig(tool.id);
+                      return (
+                        <div className={`w-12 h-12 bg-gradient-to-br ${icon.bg} rounded-lg flex items-center justify-center shadow-md ${icon.shadow} flex-shrink-0`}>
+                          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon.icon} />
+                          </svg>
+                        </div>
+                      );
+                    })()}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors truncate">
+                        {tool.name}
+                      </h3>
+                      <p className="text-xs text-slate-400 font-mono">
+                        #{tool.id} · {new Date(tool.updated_at).toLocaleDateString('zh-CN')}
+                      </p>
+                    </div>
                   </div>
-                  <button
-                    onClick={(e) => toggleFavorite(tool.id, e)}
-                    className={`p-2 rounded-full transition-all flex-shrink-0 ${
-                      favorites.includes(tool.id)
-                        ? 'text-yellow-500 hover:text-yellow-600'
-                        : 'text-slate-300 hover:text-yellow-500'
-                    }`}
-                  >
-                    <svg className="w-5 h-5" fill={favorites.includes(tool.id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                    </svg>
-                  </button>
-                </div>
-                <p className="relative text-sm text-slate-500 line-clamp-2 mb-4 font-mono text-[13px]">
-                  {tool.description || '// no description'}
-                </p>
+                  <p className="relative text-sm text-slate-500 line-clamp-2 mb-4 font-mono text-[13px]">
+                    {tool.description || '// no description'}
+                  </p>
 
-                <div className="relative flex items-center gap-2 pt-4 border-t border-slate-100">
-                  <div className="w-2 h-2 rounded-full bg-green-400"></div>
-                  <span className="text-xs text-slate-400 font-medium">READY</span>
-                </div>
-              </Link>
+                  <div className="relative flex items-center gap-2 pt-4 border-t border-slate-100">
+                    <div className="w-2 h-2 rounded-full bg-green-400"></div>
+                    <span className="text-xs text-slate-400 font-medium">READY</span>
+                  </div>
+                </Link>
+                <button
+                  onClick={(e) => toggleFavorite(tool.id, e)}
+                  className={`absolute top-4 right-4 p-2 rounded-full transition-all z-10 ${
+                    favorites.includes(tool.id)
+                      ? 'text-yellow-500 hover:text-yellow-600'
+                      : 'text-slate-300 hover:text-yellow-500'
+                  }`}
+                >
+                  <svg className="w-5 h-5" fill={favorites.includes(tool.id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                  </svg>
+                </button>
+              </div>
             ))}
           </div>
         )}
