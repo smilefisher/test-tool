@@ -103,6 +103,11 @@ interface RoleInfo {
 }
 interface SavedRole { role_id: string; role_name: string; zone: string; world_id: string; world_name: string; }
 interface SendResult { error?: string; details?: string; errCode?: number; duration: number; raw: unknown; }
+interface EmailRecord {
+  id: number; game_id: number; game_label: string; zone: string; role_id: string; role_name: string;
+  world_id: string; world_name: string; mail_id: string; env: string; success: boolean;
+  error_msg: string | null; created_at: string;
+}
 
 function loadSavedRoles(): Record<string, SavedRole[]> {
   try { return JSON.parse(localStorage.getItem(ROLES_STORAGE_KEY) || '{}'); } catch { return {}; }
@@ -135,13 +140,43 @@ export default function GameWelfarePage() {
   const [sendResult, setSendResult] = useState<SendResult | null>(null);
   const [sendError, setSendError] = useState('');
 
+  const [records, setRecords] = useState<EmailRecord[]>([]);
+  const [recordsTotal, setRecordsTotal] = useState(0);
+  const [recordsPage, setRecordsPage] = useState(1);
+  const [recordsTodayOnly, setRecordsTodayOnly] = useState(true);
+  const [recordsRoleFilter, setRecordsRoleFilter] = useState('');
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const PAGE_SIZE = 10;
+
   useEffect(() => {
     fetchTokens().then(tokens => {
       const saved = localStorage.getItem(TOKEN_STORAGE_KEY);
       if (saved && tokens.some((t: ApiToken) => String(t.id) === saved)) setSelectedTokenId(saved);
     });
     setSavedRoles(loadSavedRoles());
+    fetchRecords(1, true, '', GAME_OPTIONS[0].value);
   }, []);
+
+  async function fetchRecords(page: number, todayOnly: boolean, roleFilter: string, gid = gameId) {
+    setRecordsLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(PAGE_SIZE),
+        todayOnly: String(todayOnly),
+        game_id: String(gid),
+      });
+      if (roleFilter.trim()) params.set('role_id', roleFilter.trim());
+      const res = await fetch(`/api/game-welfare/email-records?${params}`);
+      if (res.ok) {
+        const d = await res.json();
+        setRecords(d.records);
+        setRecordsTotal(d.total);
+      }
+    } finally {
+      setRecordsLoading(false);
+    }
+  }
 
   // 切换游戏时重置 zone 和已选角色
   useEffect(() => {
@@ -149,6 +184,9 @@ export default function GameWelfarePage() {
     setSelectedSavedRole('');
     setQueryData(null);
     setQueryError('');
+    setRecordsPage(1);
+    setRecordsRoleFilter('');
+    fetchRecords(1, recordsTodayOnly, '', gameId);
   }, [gameId]);
 
   async function fetchTokens(): Promise<ApiToken[]> {
@@ -233,11 +271,16 @@ export default function GameWelfarePage() {
           game_id: gameId, zone: selectedRole.zone, role_id: selectedRole.role_id,
           world_id: selectedRole.world_id, mail_id: mailId.trim(),
           token_id: Number(selectedTokenId), env,
+          game_label: currentGame.label,
+          role_name: selectedRole.role_name,
+          world_name: selectedRole.world_name,
         }),
       });
       const data = await res.json();
       if (!res.ok) setSendResult({ error: data.error, details: data.details, errCode: data.code, duration: Date.now() - start, raw: data });
       else setSendResult({ duration: Date.now() - start, raw: data });
+      fetchRecords(1, recordsTodayOnly, recordsRoleFilter, gameId);
+      setRecordsPage(1);
     } catch (e) {
       setSendResult({ error: e instanceof Error ? e.message : String(e), duration: Date.now() - start, raw: null });
     } finally { setSending(false); }
@@ -587,6 +630,100 @@ export default function GameWelfarePage() {
                     </details>
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+        </section>
+        {/* 发送记录 */}
+        <section className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
+            <span className="w-6 h-6 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center text-sm font-bold">3</span>
+            <h2 className="text-base font-semibold text-slate-800">发送记录</h2>
+          </div>
+          <div className="p-6 space-y-4">
+            {/* 筛选栏 */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <button onClick={() => { setRecordsTodayOnly(true); setRecordsPage(1); fetchRecords(1, true, recordsRoleFilter, gameId); }}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${recordsTodayOnly ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                  今日
+                </button>
+                <button onClick={() => { setRecordsTodayOnly(false); setRecordsPage(1); fetchRecords(1, false, recordsRoleFilter, gameId); }}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${!recordsTodayOnly ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                  全部
+                </button>
+              </div>
+              <div className="flex items-center gap-2 flex-1 min-w-[180px] max-w-xs">
+                <input type="text" value={recordsRoleFilter} onChange={e => setRecordsRoleFilter(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { setRecordsPage(1); fetchRecords(1, recordsTodayOnly, recordsRoleFilter, gameId); } }}
+                  placeholder="角色ID筛选" className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <button onClick={() => { setRecordsPage(1); fetchRecords(1, recordsTodayOnly, recordsRoleFilter, gameId); }}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm rounded-lg transition-colors">
+                  查询
+                </button>
+              </div>
+              <span className="text-xs text-slate-400 ml-auto">共 {recordsTotal} 条</span>
+            </div>
+
+            {/* 记录列表 */}
+            {recordsLoading ? (
+              <div className="flex items-center justify-center py-8 text-slate-400 text-sm gap-2">
+                <div className="w-4 h-4 border-2 border-slate-300 border-t-transparent rounded-full animate-spin" />加载中...
+              </div>
+            ) : records.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-sm">暂无记录</div>
+            ) : (
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">时间</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">游戏</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">角色</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">大区</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">邮件ID</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">环境</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">结果</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {records.map(r => (
+                      <tr key={r.id} className="hover:bg-slate-50">
+                        <td className="px-3 py-2 text-xs text-slate-400 font-mono whitespace-nowrap">
+                          {new Date(r.created_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </td>
+                        <td className="px-3 py-2 text-xs font-medium text-slate-600">{r.game_label}</td>
+                        <td className="px-3 py-2 text-xs text-slate-600">
+                          <div>{r.role_name || '—'}</div>
+                          <div className="text-slate-400 font-mono">{r.role_id}</div>
+                        </td>
+                        <td className="px-3 py-2 text-xs text-slate-400 font-mono">{r.zone}</td>
+                        <td className="px-3 py-2 text-xs font-mono text-slate-600">{r.mail_id}</td>
+                        <td className="px-3 py-2 text-xs text-slate-400">{r.env}</td>
+                        <td className="px-3 py-2 text-xs">
+                          {r.success
+                            ? <span className="flex items-center gap-1 text-green-600 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />成功</span>
+                            : <div>
+                                <span className="flex items-center gap-1 text-red-500 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />失败</span>
+                                {r.error_msg && <p className="mt-0.5 text-red-400 text-[11px] font-mono break-all leading-tight max-w-[200px]">{r.error_msg}</p>}
+                              </div>
+                          }
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* 分页 */}
+            {recordsTotal > PAGE_SIZE && (
+              <div className="flex items-center justify-center gap-2">
+                <button disabled={recordsPage <= 1} onClick={() => { const p = recordsPage - 1; setRecordsPage(p); fetchRecords(p, recordsTodayOnly, recordsRoleFilter, gameId); }}
+                  className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50 transition-colors">上一页</button>
+                <span className="text-sm text-slate-500">{recordsPage} / {Math.ceil(recordsTotal / PAGE_SIZE)}</span>
+                <button disabled={recordsPage >= Math.ceil(recordsTotal / PAGE_SIZE)} onClick={() => { const p = recordsPage + 1; setRecordsPage(p); fetchRecords(p, recordsTodayOnly, recordsRoleFilter, gameId); }}
+                  className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50 transition-colors">下一页</button>
               </div>
             )}
           </div>

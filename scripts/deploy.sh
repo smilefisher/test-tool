@@ -4,12 +4,12 @@ set -e
 REMOTE_HOST="192.168.1.61"
 APP_NAME="test-tool"
 REMOTE_USER="root"
-PROJECT_DIR="/home/chenning/project/test-tool"
-TARBALL="${PROJECT_DIR}/${APP_NAME}.tar"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+TARBALL="/tmp/${APP_NAME}.tar"
 
 # 本地编译
 echo "=== 本地编译 ==="
-cd ${PROJECT_DIR}
+cd "${SCRIPT_DIR}"
 pnpm install
 pnpm run build
 

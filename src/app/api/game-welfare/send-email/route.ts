@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as grpc from '@grpc/grpc-js';
 import { getGameClient, GrpcEnv } from '@/lib/grpc-client';
-import { getAllApiTokens } from '@/lib/db';
+import { getAllApiTokens, createEmailRecord } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
-  const { game_id, zone, role_id, world_id, mail_id, code, role_uin, token_id, env } = await req.json();
+  const {
+    game_id, zone, role_id, world_id, mail_id, token_id, env,
+    game_label, role_name, world_name,
+  } = await req.json();
 
   if (!game_id || !zone || !role_id || !world_id || !mail_id || !token_id) {
     return NextResponse.json({ error: '缺少必要参数: game_id, zone, role_id, world_id, mail_id, token_id' }, { status: 400 });
@@ -30,12 +33,22 @@ export async function POST(req: NextRequest) {
       (err, reply) => {
         if (err) {
           console.error('[SendEmail] error:', { code: err.code, message: err.message, details: err.details });
+          createEmailRecord({
+            game_id: Number(game_id), game_label: game_label || String(game_id),
+            zone, role_id, role_name: role_name || '', world_id, world_name: world_name || '',
+            mail_id, env: env || 'test1', success: false, error_msg: err.message || '未知错误',
+          }).catch(() => {});
           resolve(NextResponse.json(
             { error: err.message, code: err.code, details: err.details },
             { status: 500 }
           ));
         } else {
           console.log('[SendEmail] reply:', JSON.stringify(reply));
+          createEmailRecord({
+            game_id: Number(game_id), game_label: game_label || String(game_id),
+            zone, role_id, role_name: role_name || '', world_id, world_name: world_name || '',
+            mail_id, env: env || 'test1', success: true, error_msg: null,
+          }).catch(() => {});
           resolve(NextResponse.json(reply));
         }
       }
