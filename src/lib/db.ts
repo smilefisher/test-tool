@@ -51,16 +51,25 @@ export interface ToolWithDetails extends Tool {
   steps: (ToolStep & { connection?: Connection })[];
 }
 
+export interface ApiToken {
+  id: number;
+  name: string;
+  value: string;
+  created_at: string;
+}
+
 interface Database {
   connections: Connection[];
   tools: Tool[];
   tool_params: ToolParam[];
   tool_steps: ToolStep[];
+  api_tokens: ApiToken[];
   nextIds: {
     connections: number;
     tools: number;
     tool_params: number;
     tool_steps: number;
+    api_tokens: number;
   };
 }
 
@@ -70,11 +79,13 @@ function getDefaultDb(): Database {
     tools: [],
     tool_params: [],
     tool_steps: [],
+    api_tokens: [],
     nextIds: {
       connections: 1,
       tools: 1,
       tool_params: 1,
       tool_steps: 1,
+      api_tokens: 1,
     },
   };
 }
@@ -92,6 +103,9 @@ function loadDb(): Database {
   if (fs.existsSync(dbPath)) {
     const data = fs.readFileSync(dbPath, 'utf-8');
     cachedDb = JSON.parse(data);
+    // migrate existing data that lacks api_tokens
+    if (!cachedDb!.api_tokens) cachedDb!.api_tokens = [];
+    if (!cachedDb!.nextIds.api_tokens) cachedDb!.nextIds.api_tokens = 1;
   } else {
     cachedDb = getDefaultDb();
     saveDb();
@@ -271,6 +285,28 @@ export async function deleteTool(id: number): Promise<boolean> {
   db.tools.splice(index, 1);
   db.tool_params = db.tool_params.filter(p => p.tool_id !== id);
   db.tool_steps = db.tool_steps.filter(s => s.tool_id !== id);
+  saveDb();
+  return true;
+}
+
+export async function getAllApiTokens(): Promise<ApiToken[]> {
+  const db = loadDb();
+  return db.api_tokens.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+export async function createApiToken(name: string, value: string): Promise<number> {
+  const db = loadDb();
+  const id = db.nextIds.api_tokens++;
+  db.api_tokens.push({ id, name, value, created_at: new Date().toISOString() });
+  saveDb();
+  return id;
+}
+
+export async function deleteApiToken(id: number): Promise<boolean> {
+  const db = loadDb();
+  const index = db.api_tokens.findIndex(t => t.id === id);
+  if (index === -1) return false;
+  db.api_tokens.splice(index, 1);
   saveDb();
   return true;
 }
