@@ -1,27 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as grpc from '@grpc/grpc-js';
 import { getGameClient, GrpcEnv } from '@/lib/grpc-client';
-import { getAllApiTokens, createEmailRecord } from '@/lib/db';
+import { createEmailRecord } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
   const {
-    game_id, zone, role_id, world_id, mail_id, token_id, env,
+    game_id, zone, role_id, world_id, mail_id, env,
     game_label, role_name, world_name,
   } = await req.json();
 
-  if (!game_id || !zone || !role_id || !world_id || !mail_id || !token_id) {
-    return NextResponse.json({ error: '缺少必要参数: game_id, zone, role_id, world_id, mail_id, token_id' }, { status: 400 });
+  if (!game_id || !zone || !role_id || !world_id || !mail_id) {
+    return NextResponse.json({ error: '缺少必要参数: game_id, zone, role_id, world_id, mail_id' }, { status: 400 });
   }
 
-  const tokens = await getAllApiTokens();
-  const token = tokens.find(t => t.id === Number(token_id));
-  if (!token) {
-    return NextResponse.json({ error: '未找到指定 Token，请先添加' }, { status: 400 });
+  // 从 Authorization header 获取 token
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return NextResponse.json({ error: '缺少 Authorization header' }, { status: 401 });
   }
+  const token = authHeader.substring(7);
 
   const client = getGameClient((env as GrpcEnv) || 'test1');
   const metadata = new grpc.Metadata();
-  metadata.set('token', token.value);
+  metadata.set('token', token);
 
   const req_body = { game_id: Number(game_id), zone, role_id, world_id, mail_id };
   console.log('[SendEmail] request:', JSON.stringify(req_body));

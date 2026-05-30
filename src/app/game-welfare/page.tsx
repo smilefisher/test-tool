@@ -92,10 +92,10 @@ const ZONE_MAP: Record<number, ZoneGroup[]> = {
   14: [], // D6
 };
 
-const TOKEN_STORAGE_KEY = 'game-welfare-token-id';
 const ROLES_STORAGE_KEY = 'game-welfare-saved-roles';
 
-interface ApiToken { id: number; name: string; created_at: string; }
+// 测试服固定Token
+const TEST_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjg4OCwicGhvbmUiOiIiLCJvcGVuX2lkIjoiIiwidW5pb25faWQiOiIiLCJleHAiOjE5Mzg1MTgxNzAsImlzcyI6ImdvLWdhcHAifQ.DgygFwt_56_ltBtx_TeyIJy7d7pUuJPj8oJQzcPmYyU';
 interface RoleInfo {
   platform_uin: string; channel_type: string; role_uin: string; role_id: string;
   role_name: string; level: string; avatar: string; unblock_time: number;
@@ -117,13 +117,6 @@ function storeSavedRoles(data: Record<string, SavedRole[]>) {
 }
 
 export default function GameWelfarePage() {
-  const [apiTokens, setApiTokens] = useState<ApiToken[]>([]);
-  const [showTokenMgr, setShowTokenMgr] = useState(false);
-  const [newTokenName, setNewTokenName] = useState('');
-  const [newTokenValue, setNewTokenValue] = useState('');
-  const [tokenError, setTokenError] = useState('');
-
-  const [selectedTokenId, setSelectedTokenId] = useState('');
   const [gameId, setGameId] = useState<number>(GAME_OPTIONS[0].value);
   const [env, setEnv] = useState('test1');
 
@@ -149,10 +142,6 @@ export default function GameWelfarePage() {
   const PAGE_SIZE = 10;
 
   useEffect(() => {
-    fetchTokens().then(tokens => {
-      const saved = localStorage.getItem(TOKEN_STORAGE_KEY);
-      if (saved && tokens.some((t: ApiToken) => String(t.id) === saved)) setSelectedTokenId(saved);
-    });
     setSavedRoles(loadSavedRoles());
     fetchRecords(1, true, '', GAME_OPTIONS[0].value);
   }, []);
@@ -189,45 +178,14 @@ export default function GameWelfarePage() {
     fetchRecords(1, recordsTodayOnly, '', gameId);
   }, [gameId]);
 
-  async function fetchTokens(): Promise<ApiToken[]> {
-    const res = await fetch('/api/tokens');
-    if (res.ok) { const d = await res.json(); setApiTokens(d); return d; }
-    return [];
-  }
-
-  function handleSelectToken(id: string) {
-    setSelectedTokenId(id);
-    if (id) localStorage.setItem(TOKEN_STORAGE_KEY, id);
-    else localStorage.removeItem(TOKEN_STORAGE_KEY);
-  }
-
-  async function handleAddToken() {
-    if (!newTokenName.trim() || !newTokenValue.trim()) { setTokenError('名称和值不能为空'); return; }
-    setTokenError('');
-    const res = await fetch('/api/tokens', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newTokenName.trim(), value: newTokenValue.trim() }),
-    });
-    if (res.ok) { setNewTokenName(''); setNewTokenValue(''); fetchTokens(); }
-    else { const d = await res.json(); setTokenError(d.error || '添加失败'); }
-  }
-
-  async function handleDeleteToken(id: number) {
-    if (!confirm('确认删除此 Token？')) return;
-    await fetch(`/api/tokens/${id}`, { method: 'DELETE' });
-    if (selectedTokenId === String(id)) handleSelectToken('');
-    fetchTokens();
-  }
-
   async function handleQuery() {
-    if (!selectedTokenId) { setQueryError('请先选择 Token'); return; }
     if (!zone) { setQueryError('请选择大区'); return; }
     if (!roleId.trim()) { setQueryError('请输入角色ID'); return; }
     setQuerying(true); setQueryError(''); setQueryData(null);
     try {
       const res = await fetch('/api/game-welfare/get-role', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ game_id: gameId, zone, role_id: roleId.trim(), token_id: Number(selectedTokenId), env }),
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        body: JSON.stringify({ game_id: gameId, zone, role_id: roleId.trim(), env }),
       });
       const data = await res.json();
       if (!res.ok) setQueryError(data.error || '查询失败');
@@ -259,18 +217,16 @@ export default function GameWelfarePage() {
   }
 
   async function handleSend() {
-    if (!selectedTokenId) { setSendError('请先选择 Token'); return; }
     if (!selectedSavedRole || !selectedRole) { setSendError('请选择角色'); return; }
     if (!mailId.trim()) { setSendError('请输入邮件ID'); return; }
     setSending(true); setSendError(''); setSendResult(null);
     const start = Date.now();
     try {
       const res = await fetch('/api/game-welfare/send-email', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
         body: JSON.stringify({
           game_id: gameId, zone: selectedRole.zone, role_id: selectedRole.role_id,
-          world_id: selectedRole.world_id, mail_id: mailId.trim(),
-          token_id: Number(selectedTokenId), env,
+          world_id: selectedRole.world_id, mail_id: mailId.trim(), env,
           game_label: currentGame.label,
           role_name: selectedRole.role_name,
           world_name: selectedRole.world_name,
@@ -291,7 +247,6 @@ export default function GameWelfarePage() {
   const currentGameRoles = savedRoles[String(gameId)] || [];
   const selectedRole = currentGameRoles.find(r => r.role_id === selectedSavedRole);
   const isRoleSaved = queryData ? currentGameRoles.some(r => r.role_id === queryData.role_id) : false;
-  const selectedTokenName = apiTokens.find(t => String(t.id) === selectedTokenId)?.name;
 
   // 当前选中 zone 的描述
   const selectedZoneDesc = currentZoneGroups.flatMap(g => g.zones).find(z => z.value === zone);
@@ -338,54 +293,11 @@ export default function GameWelfarePage() {
             <select value={env} onChange={e => setEnv(e.target.value)} className="px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-600">
               {ENV_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <select value={selectedTokenId} onChange={e => handleSelectToken(e.target.value)} className="px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-600 max-w-[140px]">
-              <option value="">-- Token --</option>
-              {apiTokens.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-            <button onClick={() => setShowTokenMgr(v => !v)} className={`p-1.5 transition-colors rounded-lg hover:bg-slate-100 ${showTokenMgr ? 'text-blue-600' : 'text-slate-400 hover:text-blue-600'}`} title="管理 Token">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
           </div>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
-
-        {/* Token 管理 */}
-        {showTokenMgr && (
-          <section className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-700">管理 Token</h2>
-              {selectedTokenName && <span className="text-xs text-slate-400">当前: <span className="text-blue-600 font-medium">{selectedTokenName}</span></span>}
-            </div>
-            <div className="p-6 space-y-3">
-              {apiTokens.length === 0 && <p className="text-sm text-slate-400">暂无 Token</p>}
-              {apiTokens.map(t => (
-                <div key={t.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                  <div className="flex items-center gap-2">
-                    {String(t.id) === selectedTokenId && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />}
-                    <span className="text-sm font-medium text-slate-700">{t.name}</span>
-                    <span className="text-xs text-slate-400">{new Date(t.created_at).toLocaleDateString('zh-CN')}</span>
-                  </div>
-                  <button onClick={() => handleDeleteToken(t.id)} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors rounded hover:bg-red-50">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-              <div className="flex gap-2 pt-1">
-                <input type="text" value={newTokenName} onChange={e => setNewTokenName(e.target.value)} placeholder="Token 名称" className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                <input type="password" value={newTokenValue} onChange={e => setNewTokenValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddToken()} placeholder="Token 值" className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                <button onClick={handleAddToken} className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap">添加</button>
-              </div>
-              {tokenError && <p className="text-xs text-red-500">{tokenError}</p>}
-            </div>
-          </section>
-        )}
 
         {/* 游戏选择 */}
         <section className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
@@ -654,13 +566,20 @@ export default function GameWelfarePage() {
                 </button>
               </div>
               <div className="flex items-center gap-2 flex-1 min-w-[180px] max-w-xs">
-                <input type="text" value={recordsRoleFilter} onChange={e => setRecordsRoleFilter(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { setRecordsPage(1); fetchRecords(1, recordsTodayOnly, recordsRoleFilter, gameId); } }}
-                  placeholder="角色ID筛选" className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                <button onClick={() => { setRecordsPage(1); fetchRecords(1, recordsTodayOnly, recordsRoleFilter, gameId); }}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm rounded-lg transition-colors">
-                  查询
-                </button>
+                <select value={recordsRoleFilter}
+                  onChange={e => { setRecordsRoleFilter(e.target.value); setRecordsPage(1); fetchRecords(1, recordsTodayOnly, e.target.value, gameId); }}
+                  className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">全部角色</option>
+                  {sortedZoneGroups.map(group => (
+                    <optgroup key={group} label={group}>
+                      {rolesByZoneGroup[group].map(r => (
+                        <option key={r.role_id} value={r.role_id}>
+                          {r.role_name ? `${r.role_name} (${r.role_id})` : r.role_id}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
               </div>
               <span className="text-xs text-slate-400 ml-auto">共 {recordsTotal} 条</span>
             </div>
