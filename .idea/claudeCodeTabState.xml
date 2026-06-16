@@ -7,7 +7,7 @@
           <value>
             <TabSessionState>
               <option name="provider" value="claude" />
-              <option name="sessionId" value="9fe936a8-d1c7-4ee6-8354-4e1a958f3da4" />
+              <option name="sessionId" value="25fed098-d437-47ec-a70a-159592637866" />
               <option name="cwd" value="$PROJECT_DIR$" />
               <option name="model" value="MiniMax-M2.7-highspeed-anthropic" />
               <option name="permissionMode" value="bypassPermissions" />

@@ -47,3 +47,4 @@ message SendEmailReply{
   string avatar = 2;
   string role_name = 3;
 }
+

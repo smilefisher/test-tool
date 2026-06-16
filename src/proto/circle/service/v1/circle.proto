@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package circle.service.v1;
+
+option go_package = "gamping/circle/service/v1;v1";
+
+service Circle {
+  rpc GetGameServerInfo(GetGameServerInfoReq) returns (GetGameServerInfoReply) {}
+  rpc GetVideoGift(GetVideoGiftReq) returns (GetVideoGiftV2Reply) {}
+  rpc GetCumulativeClockInConfigs(GetCumulativeClockInConfigsReq) returns (GetCumulativeClockInConfigsReply) {}
+}
+
+message GetGameServerInfoReq {
+  int32 game_type = 1;
+}
+
+message GetGameServerInfoReply {
+  int64 server_id = 1;
+  string avatar = 2;
+}
+
+message GetVideoGiftReq {
+  int64 server_id = 1;
+}
+
+message GetVideoGiftV2Reply {
+  VideoGiftSetting setting = 1;
+  repeated VideoGiftConfig configs = 2;
+}
+
+message VideoGiftSetting {
+  int64 server_id = 1;
+  int32 state = 2;
+  string title = 3;
+  string background = 4;
+  string new_background = 5;
+}
+
+message VideoGiftConfig {
+  int64 id = 1;
+  int32 index = 2;
+  int64 server_id = 3;
+  int32 sort_order = 4;
+  repeated GiftDesc current_gifts = 5;
+  string current_mail_id = 6;
+  int64 current_start_time = 7;
+  int32 backup_type = 8;
+  repeated GiftDesc backup_gifts = 9;
+  string backup_mail_id = 10;
+  int64 backup_start_time = 11;
+  int64 backup_end_time = 12;
+}
+
+message GiftDesc {
+  string icon = 1;
+  string content = 2;
+  int32 quantity = 3;
+}
+
+message GetCumulativeClockInConfigsReq {
+  int64 server_id = 1;
+  int64 page = 2;
+  int64 page_size = 3;
+}
+
+message GetCumulativeClockInConfigsReply {
+  repeated CumulativeClockinData list = 1;
+  int64 total = 2;
+}
+
+message CumulativeClockinData {
+  int32 day = 1;
+  int32 type = 2;
+  int64 value = 3;
+  string icon = 4;
+  string description = 5;
+  string num_desc = 6;
+  int64 id = 7;
+  int64 server_id = 8;
+  int32 status = 9;
+  string name = 13;
+  repeated ExtraGift extra_gifts = 15;
+}
+
+message ExtraGift {
+  int32 type = 1;
+  string content = 2;
+  string icon = 3;
+  string prop_id = 4;
+  int64 quantity = 5;
+  int64 expiration = 6;
+  string num_desc = 7;
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 
 const GAME_OPTIONS = [
@@ -11,11 +11,9 @@ const GAME_OPTIONS = [
   { label: 'X3', name: '武侠大明星', value: 7 },
   { label: 'K5', name: '向末日开炮', value: 8 },
   { label: 'X6', name: '冒险之星', value: 9 },
-  { label: 'D3', name: '精英防守', value: 10 },
   { label: 'S6', name: '无限轮回', value: 11 },
   { label: 'A7', name: '元气战纪', value: 12 },
   { label: 'D5', name: '楚新钓', value: 13 },
-  { label: 'D6', name: '迷你王国', value: 14 },
 ];
 
 const ENV_OPTIONS = [
@@ -76,8 +74,7 @@ const ZONE_MAP: Record<number, ZoneGroup[]> = {
   ],
   8: [{ group: '1大区', zones: [{ value: 'K5_ZONE1', desc: 'Android & iOS' }] }], // K5
   9: [{ group: '1大区', zones: [{ value: 'X6_ZONE1', desc: 'Android & iOS' }] }], // X6
-  10: [{ group: '1大区', zones: [{ value: 'D3_ZONE1', desc: 'Android & iOS' }] }], // D3
-  11: [ // S6
+  11:[ // S6
     { group: '1大区', zones: [{ value: 'S6_ZONE1', desc: 'Android & iOS' }, { value: 'S6_ZONE1_EMAIL', desc: 'Taptap' }] },
     { group: '3大区', zones: [{ value: 'S6_ZONE3', desc: '微小' }] },
     { group: '5大区', zones: [{ value: 'S6_ZONE5', desc: '抖小' }] },
@@ -88,8 +85,14 @@ const ZONE_MAP: Record<number, ZoneGroup[]> = {
     { group: '3大区', zones: [{ value: 'A7_ZONE3', desc: '微小' }] },
     { group: '5大区', zones: [{ value: 'A7_ZONE5', desc: '抖小' }] },
   ],
-  13: [{ group: '1大区', zones: [{ value: 'D5_ZONE1', desc: 'Android & iOS' }] }], // D5
-  14: [], // D6
+  13: [ // D5
+    { group: '1大区', zones: [{ value: 'D5_ZONE1', desc: 'Android & iOS' }] },
+    { group: '3大区', zones: [{ value: 'D5_ZONE3', desc: '微小' }] },
+    { group: '4大区', zones: [{ value: 'D5_ZONE4', desc: '抖小' }] },
+    { group: '5大区', zones: [{ value: 'D5_ZONE5_EMAIL', desc: '快小' }] },
+    { group: '13大区', zones: [{ value: 'D5_ZONE13_EMAIL', desc: '支付宝' }] },
+    { group: '20大区', zones: [{ value: 'D5_ZONE20_EMAIL', desc: '350' }] },
+  ],
 };
 
 const ROLES_STORAGE_KEY = 'game-welfare-saved-roles';
@@ -127,10 +130,10 @@ export default function GameWelfarePage() {
   const [queryError, setQueryError] = useState('');
 
   const [savedRoles, setSavedRoles] = useState<Record<string, SavedRole[]>>({});
-  const [selectedSavedRole, setSelectedSavedRole] = useState('');
+  const [selectedSavedRoles, setSelectedSavedRoles] = useState<Set<string>>(new Set());
   const [mailId, setMailId] = useState('');
   const [sending, setSending] = useState(false);
-  const [sendResult, setSendResult] = useState<SendResult | null>(null);
+  const [sendResults, setSendResults] = useState<Map<string, SendResult>>(new Map());
   const [sendError, setSendError] = useState('');
 
   const [records, setRecords] = useState<EmailRecord[]>([]);
@@ -139,12 +142,232 @@ export default function GameWelfarePage() {
   const [recordsTodayOnly, setRecordsTodayOnly] = useState(true);
   const [recordsRoleFilter, setRecordsRoleFilter] = useState('');
   const [recordsLoading, setRecordsLoading] = useState(false);
+  const [showSavedRoles, setShowSavedRoles] = useState(false);
+  const [serverInfoMap, setServerInfoMap] = useState<Record<number, { server_id: string; avatar: string }>>({});
+  interface GiftInfo { content: string; icon: string; quantity: number; }
+  interface VideoGiftItem {
+    mail_id: string; index: number;
+    gifts: GiftInfo[];
+    currentGifts: GiftInfo[];
+    currentMailId: string;
+    backupGifts: GiftInfo[];
+    backupMailId: string;
+    useBackup: boolean;
+  }
+  const [videoGiftConfigs, setVideoGiftConfigs] = useState<VideoGiftItem[]>([]);
+  const [useVideoGift, setUseVideoGift] = useState(false);
+  const [selectedVideoGiftIndices, setSelectedVideoGiftIndices] = useState<Set<number>>(new Set());
+  interface CumulativeItem { day: number; value: string; icon: string; name: string; description: string; num_desc: string; extraGifts: GiftInfo[]; }
+  const [cumulativeConfigs, setCumulativeConfigs] = useState<CumulativeItem[]>([]);
+  const [useCumulative, setUseCumulative] = useState(false);
+  const [selectedCumulativeIndices, setSelectedCumulativeIndices] = useState<Set<number>>(new Set());
+  interface WheelLotteryInfo { id: string; lottery_name: string; start_time: string; end_time: string; has_cumulative_prize: boolean; }
+  const [wheelLotteries, setWheelLotteries] = useState<WheelLotteryInfo[]>([]);
+  const [wheelLotteryPage, setWheelLotteryPage] = useState(1);
+  const [wheelLotteryHasMore, setWheelLotteryHasMore] = useState(false);
+  const [wheelLotteryTotal, setWheelLotteryTotal] = useState(0);
+  interface WheelPrizeItem { id: string; name: string; icon: string; num: number; prop_id: string; section: 'prize' | 'cumulative'; times?: number; guide_text?: string; canSend: boolean; }
+  const [wheelPrizes, setWheelPrizes] = useState<WheelPrizeItem[]>([]);
+  const [selectedLotteryId, setSelectedLotteryId] = useState('');
+  const [useWheelLottery, setUseWheelLottery] = useState(false);
+  const [selectedWheelPrizeIndices, setSelectedWheelPrizeIndices] = useState<Set<number>>(new Set());
+  const [wheelDropdownOpen, setWheelDropdownOpen] = useState(false);
+  const wheelDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!wheelDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (wheelDropdownRef.current && !wheelDropdownRef.current.contains(e.target as Node)) {
+        setWheelDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [wheelDropdownOpen]);
   const PAGE_SIZE = 10;
 
   useEffect(() => {
     setSavedRoles(loadSavedRoles());
     fetchRecords(1, true, '', GAME_OPTIONS[0].value);
+    fetchAllServerInfo();
   }, []);
+
+  async function fetchAllServerInfo() {
+    const results = await Promise.allSettled(
+      GAME_OPTIONS.map(async (g) => {
+        const res = await fetch('/api/game-welfare/server-info', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+          body: JSON.stringify({ game_type: g.value, env }),
+        });
+        if (!res.ok) throw new Error();
+        return { gameType: g.value, data: await res.json() };
+      })
+    );
+    const map: Record<number, { server_id: string; avatar: string }> = {};
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        map[r.value.gameType] = r.value.data;
+      }
+    }
+    setServerInfoMap(map);
+    // 初始游戏加载观影有礼和天天领福利
+    const firstInfo = map[GAME_OPTIONS[0].value];
+    if (firstInfo) {
+      fetchVideoGift(firstInfo.server_id);
+      fetchCumulativeConfigs(firstInfo.server_id);
+      fetchWheelLotteryList(firstInfo.server_id);
+    }
+  }
+
+  async function fetchVideoGift(serverId: string) {
+    try {
+      const res = await fetch('/api/game-welfare/video-gift', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        body: JSON.stringify({ server_id: serverId, env }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const now = Date.now() / 1000;
+        const configs = (data.configs || []).map((c: Record<string, unknown>) => {
+          const backupType = Number(c.backup_type || 0);
+          const backupStart = Number(c.backup_start_time || 0);
+          const backupEnd = Number(c.backup_end_time || 0);
+          let useBackup = false;
+          if (backupType === 1) {
+            useBackup = now > backupStart && now < backupEnd;
+          } else if (backupType === 2) {
+            useBackup = now > backupStart;
+          }
+          const parseGifts = (raw: unknown): GiftInfo[] =>
+            (raw as Array<Record<string, unknown>> || []).map(g => ({
+              content: String(g.content || ''),
+              icon: String(g.icon || ''),
+              quantity: Number(g.quantity || 0),
+            }));
+          const currentGifts = parseGifts(c.current_gifts);
+          const backupGifts = parseGifts(c.backup_gifts);
+          const gifts = useBackup && backupGifts.length > 0 ? backupGifts : currentGifts;
+          const mailId = String(useBackup && c.backup_mail_id ? c.backup_mail_id : (c.current_mail_id || ''));
+          return {
+            mail_id: mailId,
+            index: Number(c.index),
+            gifts,
+            currentGifts,
+            currentMailId: String(c.current_mail_id || ''),
+            backupGifts,
+            backupMailId: String(c.backup_mail_id || ''),
+            useBackup,
+          };
+        }).filter((c: { mail_id: string }) => c.mail_id);
+        setVideoGiftConfigs(configs);
+        if (configs.length === 0) {
+          setUseVideoGift(false);
+          setSelectedVideoGiftIndices(new Set());
+        }
+      } else {
+        setVideoGiftConfigs([]);
+      }
+    } catch {
+      setVideoGiftConfigs([]);
+    }
+  }
+
+  async function fetchCumulativeConfigs(serverId: string) {
+    try {
+      const res = await fetch('/api/game-welfare/cumulative-configs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        body: JSON.stringify({ server_id: serverId, page: 1, page_size: 50, env }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const items = (data.list || []).map((c: Record<string, unknown>) => ({
+          day: Number(c.day),
+          value: String(c.value || ''),
+          icon: String(c.icon || ''),
+          name: String(c.name || ''),
+          description: String(c.description || ''),
+          num_desc: String(c.num_desc || ''),
+          extraGifts: ((c.extra_gifts as Array<Record<string, unknown>>) || []).map(g => ({
+            content: String(g.content || ''),
+            icon: String(g.icon || ''),
+            quantity: Number(g.quantity || 0),
+          })),
+        })).filter((c: CumulativeItem) => c.value);
+        setCumulativeConfigs(items);
+        if (items.length === 0) {
+          setUseCumulative(false);
+          setSelectedCumulativeIndices(new Set());
+        }
+      } else {
+        setCumulativeConfigs([]);
+      }
+    } catch {
+      setCumulativeConfigs([]);
+    }
+  }
+
+  const WHEEL_LOTTERY_PAGE_SIZE = 5;
+
+  async function fetchWheelLotteryList(serverId: string, page = 1, resetSelection = false) {
+    try {
+      const res = await fetch('/api/game-welfare/wheel-lottery-list', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        body: JSON.stringify({ circle_id: serverId, effect_status: true, page, page_size: WHEEL_LOTTERY_PAGE_SIZE, env }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const items = (data.list || []).map((l: Record<string, unknown>) => ({
+          id: String(l.id || ''),
+          lottery_name: String(l.lottery_name || ''),
+          start_time: String(l.start_time || ''),
+          end_time: String(l.end_time || ''),
+          has_cumulative_prize: Boolean(l.has_cumulative_prize),
+        }));
+        setWheelLotteries(items);
+        setWheelLotteryTotal(Number(data.total || 0));
+        setWheelLotteryHasMore(items.length === WHEEL_LOTTERY_PAGE_SIZE);
+        if (items.length > 0 && (resetSelection || (!selectedLotteryId && page === 1))) {
+          setSelectedLotteryId(items[0].id);
+          fetchWheelLotteryPrizes(items[0].id);
+        }
+      }
+    } catch { setWheelLotteries([]); }
+  }
+
+  async function fetchWheelLotteryPrizes(lotteryId: string) {
+    try {
+      const [prizesRes, cumulativeRes] = await Promise.all([
+        fetch('/api/game-welfare/wheel-lottery-prizes', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+          body: JSON.stringify({ wheel_lottery_id: lotteryId, env }),
+        }),
+        fetch('/api/game-welfare/wheel-lottery-cumulative-prizes', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+          body: JSON.stringify({ wheel_lottery_id: lotteryId, env }),
+        }),
+      ]);
+      const prizes = prizesRes.ok ? (await prizesRes.json()).list || [] : [];
+      const cumulative = cumulativeRes.ok ? (await cumulativeRes.json()).list || [] : [];
+      // 仅 WheelLotteryGiftType_Game = 1 游戏礼包可选下发
+      const all: WheelPrizeItem[] = [
+        ...(prizes as Array<Record<string, unknown>>)
+          .map((p: Record<string, unknown>) => ({
+            id: String(p.id || ''), name: String(p.name || ''), icon: String(p.icon || ''),
+            num: Number(p.num || 0), prop_id: String(p.prop_id || ''), section: 'prize' as const,
+            canSend: Number(p.prize_type) === 1,
+          })),
+        ...(cumulative as Array<Record<string, unknown>>)
+          .map((p: Record<string, unknown>) => ({
+            id: String(p.id || ''), name: String(p.name || ''), icon: String(p.icon || ''),
+            num: Number(p.num || 0), prop_id: String(p.prop_id || ''), section: 'cumulative' as const,
+            times: Number(p.times || 0), guide_text: String(p.guide_text || ''),
+            canSend: Number(p.prize_type) === 1,
+          })),
+      ];
+      setWheelPrizes(all);
+      setSelectedWheelPrizeIndices(new Set());
+    } catch { setWheelPrizes([]); }
+  }
 
   async function fetchRecords(page: number, todayOnly: boolean, roleFilter: string, gid = gameId) {
     setRecordsLoading(true);
@@ -170,12 +393,30 @@ export default function GameWelfarePage() {
   // 切换游戏时重置 zone 和已选角色
   useEffect(() => {
     setZone('');
-    setSelectedSavedRole('');
+    setSelectedSavedRoles(new Set());
+    setShowSavedRoles(false);
     setQueryData(null);
     setQueryError('');
     setRecordsPage(1);
     setRecordsRoleFilter('');
+    setUseVideoGift(false);
+    setSelectedVideoGiftIndices(new Set());
+    setUseCumulative(false);
+    setSelectedCumulativeIndices(new Set());
+    setUseWheelLottery(false);
+    setSelectedWheelPrizeIndices(new Set());
+    setSelectedLotteryId('');
+    setWheelPrizes([]);
+    setWheelLotteryPage(1);
+    setWheelDropdownOpen(false);
+    setMailId('');
     fetchRecords(1, recordsTodayOnly, '', gameId);
+    const info = serverInfoMap[gameId];
+    if (info) {
+      fetchVideoGift(info.server_id);
+      fetchCumulativeConfigs(info.server_id);
+      fetchWheelLotteryList(info.server_id);
+    }
   }, [gameId]);
 
   async function handleQuery() {
@@ -213,39 +454,62 @@ export default function GameWelfarePage() {
     const key = String(gameId);
     const next = { ...savedRoles, [key]: (savedRoles[key] || []).filter(r => r.role_id !== rid) };
     setSavedRoles(next); storeSavedRoles(next);
-    if (selectedSavedRole === rid) setSelectedSavedRole('');
+    setSelectedSavedRoles(prev => { const next = new Set(prev); next.delete(rid); return next; });
   }
 
   async function handleSend() {
-    if (!selectedSavedRole || !selectedRole) { setSendError('请选择角色'); return; }
-    if (!mailId.trim()) { setSendError('请输入邮件ID'); return; }
-    setSending(true); setSendError(''); setSendResult(null);
-    const start = Date.now();
-    try {
-      const res = await fetch('/api/game-welfare/send-email', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
-        body: JSON.stringify({
-          game_id: gameId, zone: selectedRole.zone, role_id: selectedRole.role_id,
-          world_id: selectedRole.world_id, mail_id: mailId.trim(), env,
-          game_label: currentGame.label,
-          role_name: selectedRole.role_name,
-          world_name: selectedRole.world_name,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) setSendResult({ error: data.error, details: data.details, errCode: data.code, duration: Date.now() - start, raw: data });
-      else setSendResult({ duration: Date.now() - start, raw: data });
-      fetchRecords(1, recordsTodayOnly, recordsRoleFilter, gameId);
-      setRecordsPage(1);
-    } catch (e) {
-      setSendResult({ error: e instanceof Error ? e.message : String(e), duration: Date.now() - start, raw: null });
-    } finally { setSending(false); }
+    if (selectedSavedRoles.size === 0) { setSendError('请选择角色'); return; }
+    const mailIds = useWheelLottery
+      ? [...selectedWheelPrizeIndices].map(i => wheelPrizes[i].prop_id)
+      : useCumulative
+      ? [...selectedCumulativeIndices].map(i => cumulativeConfigs[i].value)
+      : useVideoGift
+      ? [...selectedVideoGiftIndices].map(i => videoGiftConfigs[i].mail_id)
+      : [mailId.trim()];
+    if (mailIds.length === 0 || mailIds.some(m => !m)) { setSendError('请选择或输入邮件ID'); return; }
+    setSending(true); setSendError(''); setSendResults(new Map());
+    const sendOne = async ({ role, mail_id }: { role: SavedRole; mail_id: string }): Promise<[string, SendResult]> => {
+      const t0 = Date.now();
+      try {
+        const res = await fetch('/api/game-welfare/send-email', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+          body: JSON.stringify({
+            game_id: gameId, zone: role.zone, role_id: role.role_id,
+            world_id: role.world_id, mail_id, env,
+            game_label: currentGame.label,
+            role_name: role.role_name,
+            world_name: role.world_name,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) return [role.role_id + '|' + mail_id, { error: data.error, details: data.details, errCode: data.code, duration: Date.now() - t0, raw: data }];
+        return [role.role_id + '|' + mail_id, { duration: Date.now() - t0, raw: data }];
+      } catch (e) {
+        return [role.role_id + '|' + mail_id, { error: e instanceof Error ? e.message : String(e), duration: Date.now() - t0, raw: null }];
+      }
+    };
+    const entries: [string, SendResult][] = [];
+    const sendRole = async (role: SavedRole, mIds: string[]) => {
+      for (let i = 0; i < mIds.length; i++) {
+        const entry = await sendOne({ role, mail_id: mIds[i] });
+        entries.push(entry);
+        if (mIds.length > 1 && i < mIds.length - 1) {
+          await new Promise(r => setTimeout(r, 100));
+        }
+      }
+    };
+    const roles = currentGameRoles.filter(r => selectedSavedRoles.has(r.role_id));
+    await Promise.all(roles.map(r => sendRole(r, mailIds)));
+    setSendResults(new Map(entries));
+    setSending(false);
+    fetchRecords(1, recordsTodayOnly, recordsRoleFilter, gameId);
+    setRecordsPage(1);
   }
 
   const currentGame = GAME_OPTIONS.find(g => g.value === gameId)!;
   const currentZoneGroups = ZONE_MAP[gameId] || [];
   const currentGameRoles = savedRoles[String(gameId)] || [];
-  const selectedRole = currentGameRoles.find(r => r.role_id === selectedSavedRole);
+  const selectedRoles = currentGameRoles.filter(r => selectedSavedRoles.has(r.role_id));
   const isRoleSaved = queryData ? currentGameRoles.some(r => r.role_id === queryData.role_id) : false;
 
   // 当前选中 zone 的描述
@@ -306,13 +570,19 @@ export default function GameWelfarePage() {
           </div>
           <div className="p-6">
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {GAME_OPTIONS.map(g => (
-                <button key={g.value} onClick={() => setGameId(g.value)}
-                  className={`rounded-lg px-3 py-2.5 text-center transition-all border ${gameId === g.value ? 'bg-orange-500 border-orange-500 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-orange-300 hover:text-orange-600'}`}>
-                  <p className="text-xs font-bold">{g.label}</p>
-                  <p className={`text-[10px] mt-0.5 ${gameId === g.value ? 'text-orange-100' : 'text-slate-400'}`}>{g.name}</p>
-                </button>
-              ))}
+              {GAME_OPTIONS.map(g => {
+                const info = serverInfoMap[g.value];
+                return (
+                  <button key={g.value} onClick={() => setGameId(g.value)}
+                    className={`rounded-lg px-3 py-2.5 text-center transition-all border ${gameId === g.value ? 'bg-orange-500 border-orange-500 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-orange-300 hover:text-orange-600'}`}>
+                    {info?.avatar && (
+                      <img src={info.avatar} alt="" className="w-7 h-7 rounded-full mx-auto mb-1 object-cover" />
+                    )}
+                    <p className="text-xs font-bold">{g.label}</p>
+                    <p className={`text-[10px] mt-0.5 ${gameId === g.value ? 'text-orange-100' : 'text-slate-400'}`}>{g.name}</p>
+                  </button>
+                );
+              })}
             </div>
             <div className="mt-3 flex items-center gap-2">
               <span className="text-sm font-semibold text-orange-600">{currentGame.label}</span>
@@ -408,35 +678,48 @@ export default function GameWelfarePage() {
 
             {currentGameRoles.length > 0 && (
               <div className="border border-slate-200 rounded-lg overflow-hidden">
-                <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{currentGame.label} · {currentGame.name} 已保存角色</p>
-                </div>
-                <div>
-                  {sortedZoneGroups.map(group => (
-                    <div key={group}>
-                      <div className="px-4 py-1.5 bg-slate-50 border-b border-slate-100">
-                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{group}</span>
-                      </div>
-                      <div className="divide-y divide-slate-100">
-                        {rolesByZoneGroup[group].map(r => (
-                          <div key={r.role_id} className="flex items-center justify-between px-4 py-2.5 bg-white hover:bg-slate-50">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <span className="text-sm font-medium text-slate-700 truncate">{r.role_name || '—'}</span>
-                              <span className="text-xs text-slate-400 font-mono shrink-0">{r.role_id}</span>
-                              <span className="text-xs text-slate-400 shrink-0">{r.world_name || r.world_id}</span>
-                              <span className="text-xs text-slate-300 font-mono shrink-0">{r.zone}</span>
+                <button
+                  onClick={() => setShowSavedRoles(v => !v)}
+                  className="w-full px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between hover:bg-slate-100 transition-colors"
+                >
+                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                    {currentGame.label} · {currentGame.name} 已保存角色 ({currentGameRoles.length})
+                  </span>
+                  <svg
+                    className={`w-4 h-4 text-slate-400 transition-transform ${showSavedRoles ? 'rotate-180' : ''}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {showSavedRoles && (
+                  <div>
+                    {sortedZoneGroups.map(group => (
+                      <div key={group}>
+                        <div className="px-4 py-1.5 bg-slate-50 border-b border-slate-100">
+                          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{group}</span>
+                        </div>
+                        <div className="divide-y divide-slate-100">
+                          {rolesByZoneGroup[group].map(r => (
+                            <div key={r.role_id} className="flex items-center justify-between px-4 py-2.5 bg-white hover:bg-slate-50">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className="text-sm font-medium text-slate-700 truncate">{r.role_name || '—'}</span>
+                                <span className="text-xs text-slate-400 font-mono shrink-0">{r.role_id}</span>
+                                <span className="text-xs text-slate-400 shrink-0">{r.world_name || r.world_id}</span>
+                                <span className="text-xs text-slate-300 font-mono shrink-0">{r.zone}</span>
+                              </div>
+                              <button onClick={() => handleDeleteSavedRole(r.role_id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors rounded hover:bg-red-50 shrink-0">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
                             </div>
-                            <button onClick={() => handleDeleteSavedRole(r.role_id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors rounded hover:bg-red-50 shrink-0">
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -449,101 +732,463 @@ export default function GameWelfarePage() {
             <h2 className="text-base font-semibold text-slate-800">发送奖励</h2>
           </div>
           <div className="p-6 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">角色 <span className="text-red-500">*</span></label>
-                {currentGameRoles.length === 0 ? (
-                  <div className="px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-400 bg-slate-50">暂无已保存角色，请先查询并保存</div>
-                ) : (
-                  <select value={selectedSavedRole} onChange={e => setSelectedSavedRole(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
-                    <option value="">-- 选择角色 --</option>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">角色 <span className="text-red-500">*</span></label>
+              {currentGameRoles.length === 0 ? (
+                <div className="px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-400 bg-slate-50">暂无已保存角色，请先查询并保存</div>
+              ) : (
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input type="checkbox"
+                        checked={selectedSavedRoles.size === currentGameRoles.length && currentGameRoles.length > 0}
+                        onChange={() => {
+                          if (selectedSavedRoles.size === currentGameRoles.length) {
+                            setSelectedSavedRoles(new Set());
+                          } else {
+                            setSelectedSavedRoles(new Set(currentGameRoles.map(r => r.role_id)));
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500" />
+                      <span className="text-xs font-medium text-slate-500">全选</span>
+                    </label>
+                    <span className="text-xs text-slate-400">已选 {selectedSavedRoles.size}/{currentGameRoles.length}</span>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto">
                     {sortedZoneGroups.map(group => (
-                      <optgroup key={group} label={group}>
-                        {rolesByZoneGroup[group].map(r => (
-                          <option key={r.role_id} value={r.role_id}>
-                            {r.role_name ? `${r.role_name} (${r.role_id})` : r.role_id} · {r.world_name || r.world_id}
-                          </option>
-                        ))}
-                      </optgroup>
+                      <div key={group}>
+                        <div className="px-3 py-1 bg-slate-50 border-b border-slate-100">
+                          <span className="text-xs font-semibold text-slate-400">{group}</span>
+                        </div>
+                        {rolesByZoneGroup[group].map(r => {
+                          const checked = selectedSavedRoles.has(r.role_id);
+                          return (
+                            <label key={r.role_id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-50 transition-colors ${checked ? 'bg-blue-50' : ''}`}>
+                              <input type="checkbox" checked={checked}
+                                onChange={() => {
+                                  setSelectedSavedRoles(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(r.role_id)) next.delete(r.role_id);
+                                    else next.add(r.role_id);
+                                    return next;
+                                  });
+                                }}
+                                className="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500 shrink-0" />
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <span className="text-sm text-slate-700 truncate">{r.role_name || r.role_id}</span>
+                                <span className="text-xs text-slate-400 font-mono shrink-0">{r.role_id}</span>
+                                <span className="text-xs text-slate-400 shrink-0">{r.world_name || r.world_id}</span>
+                                <span className="text-xs text-slate-300 font-mono shrink-0">{r.zone}</span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
                     ))}
-                  </select>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">邮件ID (mail_id) <span className="text-red-500">*</span></label>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">邮件ID (mail_id) <span className="text-red-500">*</span></label>
+              {(videoGiftConfigs.length > 0 || cumulativeConfigs.length > 0 || wheelLotteries.length > 0) && (
+                <div className="flex items-center gap-2 mb-2">
+                  <button onClick={() => { setUseVideoGift(false); setUseCumulative(false); setUseWheelLottery(false); }}
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${!useVideoGift && !useCumulative && !useWheelLottery ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                    手动输入
+                  </button>
+                  {wheelLotteries.length > 0 && (
+                    <button onClick={() => { setUseWheelLottery(true); setUseVideoGift(false); setUseCumulative(false); setSelectedWheelPrizeIndices(new Set()); }}
+                      className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${useWheelLottery ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                      观影转盘抽奖
+                    </button>
+                  )}
+                  {videoGiftConfigs.length > 0 && (
+                    <button onClick={() => { setUseVideoGift(true); setUseCumulative(false); setUseWheelLottery(false); setSelectedVideoGiftIndices(new Set()); }}
+                      className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${useVideoGift ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                      观影有礼
+                    </button>
+                  )}
+                  {cumulativeConfigs.length > 0 && (
+                    <button onClick={() => { setUseCumulative(true); setUseVideoGift(false); setUseWheelLottery(false); setSelectedCumulativeIndices(new Set()); }}
+                      className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${useCumulative ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                      天天领福利
+                    </button>
+                  )}
+                </div>
+              )}
+              {useVideoGift ? (
+
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input type="checkbox"
+                        checked={selectedVideoGiftIndices.size === videoGiftConfigs.length && videoGiftConfigs.length > 0}
+                        onChange={() => {
+                          if (selectedVideoGiftIndices.size === videoGiftConfigs.length) {
+                            setSelectedVideoGiftIndices(new Set());
+                          } else {
+                            setSelectedVideoGiftIndices(new Set(videoGiftConfigs.map((_, i) => i)));
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500" />
+                      <span className="text-xs font-medium text-slate-500">全选</span>
+                    </label>
+                    <span className="text-xs text-slate-400">已选 {selectedVideoGiftIndices.size}/{videoGiftConfigs.length} 次</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-px bg-slate-100">
+                    {videoGiftConfigs.map((c, i) => {
+                      const checked = selectedVideoGiftIndices.has(i);
+                      return (
+                        <label key={i} className={`flex flex-col gap-1 px-2.5 py-2 cursor-pointer hover:bg-slate-50 transition-colors bg-white ${checked ? 'ring-1 ring-orange-400 bg-orange-50' : ''}`}>
+                          <div className="flex items-center gap-2">
+                            <input type="checkbox" checked={checked}
+                              onChange={() => {
+                                setSelectedVideoGiftIndices(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(i)) next.delete(i); else next.add(i);
+                                  return next;
+                                });
+                              }}
+                              className="w-3.5 h-3.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500 shrink-0" />
+                            <p className="text-xs font-medium text-slate-700">第{c.index}次</p>
+                            <p className="text-[10px] text-slate-400 font-mono truncate flex-1">{c.mail_id}</p>
+                          </div>
+                          <div className="flex items-start gap-3 ml-[22px]">
+                            <div className="space-y-0.5">
+                              {c.currentGifts.map((g, gi) => (
+                                <div key={gi} className={`flex items-center gap-1.5 ${c.useBackup ? 'opacity-30' : ''}`}>
+                                  <img src={g.icon} alt="" className="w-5 h-5 rounded object-cover shrink-0" />
+                                  <span className="text-[10px] text-slate-600 truncate">{g.content}{g.quantity ? ` x${g.quantity}` : ''}</span>
+                                </div>
+                              ))}
+                            </div>
+                            {c.backupGifts.length > 0 && (
+                              <div className="space-y-0.5">
+                                {c.backupGifts.map((g, gi) => (
+                                  <div key={gi} className={`flex items-center gap-1.5 ${c.useBackup ? '' : 'opacity-30'}`}>
+                                    <img src={g.icon} alt="" className="w-5 h-5 rounded object-cover shrink-0" />
+                                    <span className="text-[10px] text-slate-600 truncate">{g.content}{g.quantity ? ` x${g.quantity}` : ''}</span>
+                                  </div>
+                                ))}
+                                <span className={`text-[10px] font-medium ${c.useBackup ? 'text-orange-500' : 'text-slate-300'}`}>
+                                  {c.useBackup ? '生效中' : '备用'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : useCumulative ? (
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input type="checkbox"
+                        checked={selectedCumulativeIndices.size === cumulativeConfigs.length && cumulativeConfigs.length > 0}
+                        onChange={() => {
+                          if (selectedCumulativeIndices.size === cumulativeConfigs.length) {
+                            setSelectedCumulativeIndices(new Set());
+                          } else {
+                            setSelectedCumulativeIndices(new Set(cumulativeConfigs.map((_, i) => i)));
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500" />
+                      <span className="text-xs font-medium text-slate-500">全选</span>
+                    </label>
+                    <span className="text-xs text-slate-400">已选 {selectedCumulativeIndices.size}/{cumulativeConfigs.length} 天</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-px bg-slate-100">
+                    {cumulativeConfigs.map((c, i) => {
+                      const checked = selectedCumulativeIndices.has(i);
+                      return (
+                        <label key={i} className={`flex flex-col gap-1 px-2.5 py-2 cursor-pointer hover:bg-slate-50 transition-colors bg-white ${checked ? 'ring-1 ring-orange-400 bg-orange-50' : ''}`}>
+                          <div className="flex items-center gap-2">
+                            <input type="checkbox" checked={checked}
+                              onChange={() => {
+                                setSelectedCumulativeIndices(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(i)) next.delete(i); else next.add(i);
+                                  return next;
+                                });
+                              }}
+                              className="w-3.5 h-3.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500 shrink-0" />
+                            <p className="text-xs font-medium text-slate-700">第{c.day}天</p>
+                            <p className="text-[10px] text-slate-400 font-mono truncate flex-1">{c.value}</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 ml-[22px]">
+                            {c.icon && <img src={c.icon} alt="" className="w-5 h-5 rounded object-cover shrink-0" />}
+                            <span className="text-[10px] text-slate-600 truncate">{c.name}{c.num_desc ? ` ${c.num_desc}` : ''}</span>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : useWheelLottery ? (
+                <div className="space-y-3">
+                  <div className="relative" ref={wheelDropdownRef}>
+                    <button onClick={() => setWheelDropdownOpen(v => !v)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-left flex items-center justify-between">
+                      <span className={selectedLotteryId ? 'text-slate-700' : 'text-slate-400'}>
+                        {selectedLotteryId ? wheelLotteries.find(l => l.id === selectedLotteryId)?.lottery_name || '-- 选择观影转盘活动 --' : '-- 选择观影转盘活动 --'}
+                      </span>
+                      <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                    </button>
+                    {wheelDropdownOpen && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {(wheelLotteryPage > 1 || wheelLotteryHasMore) && (
+                          <div className="flex border-b border-slate-100">
+                            {wheelLotteryPage > 1 && (
+                              <button onClick={() => {
+                                const prev = wheelLotteryPage - 1;
+                                setWheelLotteryPage(prev);
+                                const info = serverInfoMap[gameId];
+                                fetchWheelLotteryList(info?.server_id || '', prev);
+                              }}
+                                className="flex-1 px-3 py-1.5 text-xs text-blue-500 hover:bg-blue-50 text-center">
+                                ◀ 上一页
+                              </button>
+                            )}
+                            {wheelLotteryHasMore && (
+                              <button onClick={() => {
+                                const next = wheelLotteryPage + 1;
+                                setWheelLotteryPage(next);
+                                const info = serverInfoMap[gameId];
+                                fetchWheelLotteryList(info?.server_id || '', next);
+                              }}
+                                className="flex-1 px-3 py-1.5 text-xs text-blue-500 hover:bg-blue-50 text-center">
+                                下一页 ▶
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {wheelLotteries.map(l => (
+                          <button key={l.id} onClick={() => {
+                            setSelectedLotteryId(l.id);
+                            setSelectedWheelPrizeIndices(new Set());
+                            fetchWheelLotteryPrizes(l.id);
+                            setWheelDropdownOpen(false);
+                          }}
+                            className={`w-full px-3 py-2 text-sm text-left hover:bg-slate-50 ${l.id === selectedLotteryId ? 'bg-orange-50 text-orange-600 font-medium' : 'text-slate-700'}`}>
+                            {l.lottery_name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {(() => {
+                    const prizes = wheelPrizes.filter(p => p.section === 'prize');
+                    const cumulative = wheelPrizes.filter(p => p.section === 'cumulative');
+                    return (
+                      <div className="space-y-3">
+                        {prizes.length > 0 && (
+                          <div className="border border-slate-200 rounded-lg overflow-hidden">
+                            <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input type="checkbox"
+                                  checked={prizes.some(p => p.canSend) && prizes.filter(p => p.canSend).every(p => selectedWheelPrizeIndices.has(wheelPrizes.indexOf(p)))}
+                                  onChange={() => {
+                                    setSelectedWheelPrizeIndices(prev => {
+                                      const next = new Set(prev);
+                                      const sendable = prizes.filter(p => p.canSend);
+                                      const allSelected = sendable.every(p => next.has(wheelPrizes.indexOf(p)));
+                                      sendable.forEach(p => {
+                                        const idx = wheelPrizes.indexOf(p);
+                                        if (allSelected) next.delete(idx); else next.add(idx);
+                                      });
+                                      return next;
+                                    });
+                                  }}
+                                  className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500" />
+                                <span className="text-xs font-medium text-slate-500">普通奖品</span>
+                              </label>
+                              <span className="text-xs text-slate-400">已选 {prizes.filter(p => selectedWheelPrizeIndices.has(wheelPrizes.indexOf(p))).length}/{prizes.filter(p => p.canSend).length}</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-px bg-slate-100">
+                              {prizes.map(p => {
+                                const idx = wheelPrizes.indexOf(p);
+                                const checked = selectedWheelPrizeIndices.has(idx);
+                                return (
+                                  <label key={p.id} className={`flex flex-col gap-1 px-2.5 py-2 transition-colors bg-white ${p.canSend ? 'cursor-pointer hover:bg-slate-50' : 'opacity-40'} ${checked ? 'ring-1 ring-orange-400 bg-orange-50' : ''}`}>
+                                    <div className="flex items-center gap-2">
+                                      {p.canSend ? (
+                                        <input type="checkbox" checked={checked}
+                                          onChange={() => {
+                                            setSelectedWheelPrizeIndices(prev => {
+                                              const next = new Set(prev);
+                                              if (next.has(idx)) next.delete(idx); else next.add(idx);
+                                              return next;
+                                            });
+                                          }}
+                                          className="w-3.5 h-3.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500 shrink-0" />
+                                      ) : (
+                                        <span className="w-3.5 h-3.5 shrink-0" />
+                                      )}
+                                      <span className="text-xs font-medium text-slate-700 truncate">{p.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 ml-[22px]">
+                                      {p.icon && <img src={p.icon} alt="" className="w-5 h-5 rounded object-cover shrink-0" />}
+                                      <span className="text-[10px] text-slate-400 font-mono truncate">{p.prop_id}</span>
+                                      <span className="text-[10px] text-slate-400">x{p.num}</span>
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {cumulative.length > 0 && (
+                          <div className="border border-slate-200 rounded-lg overflow-hidden">
+                            <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input type="checkbox"
+                                  checked={cumulative.some(p => p.canSend) && cumulative.filter(p => p.canSend).every(p => selectedWheelPrizeIndices.has(wheelPrizes.indexOf(p)))}
+                                  onChange={() => {
+                                    setSelectedWheelPrizeIndices(prev => {
+                                      const next = new Set(prev);
+                                      const sendable = cumulative.filter(p => p.canSend);
+                                      const allSelected = sendable.every(p => next.has(wheelPrizes.indexOf(p)));
+                                      sendable.forEach(p => {
+                                        const idx = wheelPrizes.indexOf(p);
+                                        if (allSelected) next.delete(idx); else next.add(idx);
+                                      });
+                                      return next;
+                                    });
+                                  }}
+                                  className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500" />
+                                <span className="text-xs font-medium text-slate-500">累抽奖品</span>
+                              </label>
+                              <span className="text-xs text-slate-400">已选 {cumulative.filter(p => selectedWheelPrizeIndices.has(wheelPrizes.indexOf(p))).length}/{cumulative.filter(p => p.canSend).length}</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-px bg-slate-100">
+                              {cumulative.map(p => {
+                                const idx = wheelPrizes.indexOf(p);
+                                const checked = selectedWheelPrizeIndices.has(idx);
+                                return (
+                                  <label key={p.id} className={`flex flex-col gap-1 px-2.5 py-2 transition-colors bg-white ${p.canSend ? 'cursor-pointer hover:bg-slate-50' : 'opacity-40'} ${checked ? 'ring-1 ring-orange-400 bg-orange-50' : ''}`}>
+                                    <div className="flex items-center gap-2">
+                                      {p.canSend ? (
+                                        <input type="checkbox" checked={checked}
+                                          onChange={() => {
+                                            setSelectedWheelPrizeIndices(prev => {
+                                              const next = new Set(prev);
+                                              if (next.has(idx)) next.delete(idx); else next.add(idx);
+                                              return next;
+                                            });
+                                          }}
+                                          className="w-3.5 h-3.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500 shrink-0" />
+                                      ) : (
+                                        <span className="w-3.5 h-3.5 shrink-0" />
+                                      )}
+                                      <span className="text-xs font-medium text-slate-700 truncate">{p.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 ml-[22px]">
+                                      {p.icon && <img src={p.icon} alt="" className="w-5 h-5 rounded object-cover shrink-0" />}
+                                      <span className="text-[10px] text-slate-400 font-mono truncate">{p.prop_id}</span>
+                                      <span className="text-[10px] text-slate-400">x{p.num}</span>
+                                    </div>
+                                    {p.times !== undefined && p.times > 0 && (
+                                      <div className="ml-[22px] mt-0.5">
+                                        <span className="text-[10px] text-orange-500">累抽{p.times}次</span>
+                                        {p.guide_text && <span className="text-[10px] text-slate-400 ml-1">{p.guide_text}</span>}
+                                      </div>
+                                    )}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
                 <input type="text" value={mailId} onChange={e => setMailId(e.target.value)} placeholder="输入邮件ID" className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
-              </div>
+              )}
             </div>
 
-            {selectedRole && (
-              <div className="bg-slate-50 border border-slate-100 rounded-lg px-4 py-2.5 flex items-center gap-4 text-xs text-slate-500 flex-wrap">
-                <span>zone: <span className="font-mono text-slate-700">{selectedRole.zone}</span></span>
-                <span>world_id: <span className="font-mono text-slate-700">{selectedRole.world_id}</span></span>
-                <span>role_id: <span className="font-mono text-slate-700">{selectedRole.role_id}</span></span>
+            {selectedRoles.length > 0 && (
+              <div className="bg-slate-50 border border-slate-100 rounded-lg px-4 py-2.5 space-y-1.5">
+                {selectedRoles.map(r => (
+                  <div key={r.role_id} className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
+                    <span className="font-medium text-slate-700">{r.role_name || r.role_id}</span>
+                    <span>zone: <span className="font-mono text-slate-600">{r.zone}</span></span>
+                    <span>world_id: <span className="font-mono text-slate-600">{r.world_id}</span></span>
+                    <span>role_id: <span className="font-mono text-slate-600">{r.role_id}</span></span>
+                  </div>
+                ))}
               </div>
             )}
 
             {sendError && <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2 text-sm text-red-600">{sendError}</div>}
 
-            <button onClick={handleSend} disabled={sending} className="flex items-center gap-2 px-5 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white text-sm font-medium rounded-lg transition-colors">
+            <button onClick={handleSend} disabled={sending || selectedSavedRoles.size === 0} className="flex items-center gap-2 px-5 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white text-sm font-medium rounded-lg transition-colors">
               {sending
                 ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />发送中...</>
                 : <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>发送</>
               }
             </button>
 
-            {sendResult && (
-              <div className="bg-slate-50 border border-slate-200 rounded-lg overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-slate-100">
-                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">发送结果</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-slate-400">{sendResult.duration}ms</span>
-                    {sendResult.error
-                      ? <span className="text-xs text-red-600 font-medium flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />失败</span>
-                      : <span className="text-xs text-green-600 font-medium flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />成功</span>
-                    }
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4">
-                  {sendResult.error ? (
-                    <>
-                      {sendResult.errCode != null && (
-                        <div className="bg-white rounded-lg p-3 border border-slate-100">
-                          <p className="text-xs text-slate-400 mb-1">错误码</p>
-                          <p className="text-sm font-mono text-slate-700">{sendResult.errCode}</p>
-                        </div>
-                      )}
-                      {sendResult.details && (
-                        <div className="bg-white rounded-lg p-3 border border-slate-100">
-                          <p className="text-xs text-slate-400 mb-1">详情</p>
-                          <p className="text-sm font-mono text-slate-700 break-all">{sendResult.details}</p>
-                        </div>
-                      )}
-                      <div className="bg-white rounded-lg p-3 border border-red-100 col-span-full">
-                        <p className="text-xs text-slate-400 mb-1">错误信息</p>
-                        <p className="text-sm font-mono text-red-600 break-all">{sendResult.error}</p>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="bg-white rounded-lg p-3 border border-green-100 col-span-full">
-                      <p className="text-sm font-medium text-green-600 flex items-center gap-2">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        发送成功
-                      </p>
+            {sendResults.size > 0 && (() => {
+              const resultsArr = Array.from(sendResults.values());
+              const successCount = resultsArr.filter(r => !r.error).length;
+              const failCount = resultsArr.filter(r => r.error).length;
+              const maxDuration = Math.max(...resultsArr.map(r => r.duration));
+              return (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-slate-100">
+                    <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">发送结果</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate-400">{maxDuration}ms</span>
+                      <span className="text-xs text-green-600 font-medium">成功 {successCount}</span>
+                      {failCount > 0 && <span className="text-xs text-red-600 font-medium">失败 {failCount}</span>}
                     </div>
-                  )}
-                </div>
-                {sendResult.raw != null && (
-                  <div className="px-4 pb-4">
-                    <details className="text-xs">
-                      <summary className="text-slate-400 cursor-pointer hover:text-slate-600">查看原始 JSON</summary>
-                      <pre className="mt-2 font-mono text-slate-600 bg-white rounded p-3 border border-slate-100 overflow-x-auto">{JSON.stringify(sendResult.raw, null, 2)}</pre>
-                    </details>
                   </div>
-                )}
-              </div>
-            )}
+                  <div className="divide-y divide-slate-100">
+                    {(() => {
+                      const mailIds = useWheelLottery
+                        ? [...selectedWheelPrizeIndices].map(i => wheelPrizes[i].prop_id)
+                        : useCumulative
+                        ? [...selectedCumulativeIndices].map(i => cumulativeConfigs[i].value)
+                        : useVideoGift
+                        ? [...selectedVideoGiftIndices].map(i => videoGiftConfigs[i].mail_id)
+                        : [mailId.trim()];
+                      return selectedRoles.flatMap(role =>
+                        mailIds.map(mail_id => {
+                          const key = role.role_id + '|' + mail_id;
+                          const result = sendResults.get(key);
+                          if (!result) return null;
+                          const ok = !result.error;
+                          return (
+                            <div key={key} className="px-4 py-2.5 flex items-center justify-between bg-white">
+                              <div className="flex items-center gap-3 min-w-0">
+                                {ok
+                                  ? <svg className="w-4 h-4 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                  : <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                }
+                                <span className="text-sm font-medium text-slate-700 truncate">{role.role_name || role.role_id}</span>
+                                <span className="text-xs text-slate-400 font-mono truncate">{mail_id}</span>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <span className="text-xs text-slate-400">{result.duration}ms</span>
+                                {ok
+                                  ? <span className="text-xs text-green-600 font-medium">成功</span>
+                                  : <span className="text-xs text-red-500 font-medium max-w-[260px] truncate" title={result.error}>{result.error}</span>
+                                }
+                              </div>
+                            </div>
+                          );
+                        })
+                      );
+                    })()}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </section>
         {/* 发送记录 */}

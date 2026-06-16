@@ -56,5 +56,5 @@ ssh -t -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} << 'ENDSSH'
   echo "访问 http://$(hostname -I | awk '{print $1}'):1001"
 ENDSSH
 
-rm -f ${TARBALL}
+sudo rm -f ${TARBALL}
 echo "=== 完成 ==="
