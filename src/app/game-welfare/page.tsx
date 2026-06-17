@@ -465,8 +465,8 @@ export default function GameWelfarePage() {
       ? [...selectedCumulativeIndices].map(i => cumulativeConfigs[i].value)
       : useVideoGift
       ? [...selectedVideoGiftIndices].map(i => videoGiftConfigs[i].mail_id)
-      : [mailId.trim()];
-    if (mailIds.length === 0 || mailIds.some(m => !m)) { setSendError('请选择或输入邮件ID'); return; }
+      : mailId.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    if (mailIds.length === 0) { setSendError('请选择或输入邮件ID'); return; }
     setSending(true); setSendError(''); setSendResults(new Map());
     const sendOne = async ({ role, mail_id }: { role: SavedRole; mail_id: string }): Promise<[string, SendResult]> => {
       const t0 = Date.now();
@@ -1107,7 +1107,7 @@ export default function GameWelfarePage() {
                   })()}
                 </div>
               ) : (
-                <input type="text" value={mailId} onChange={e => setMailId(e.target.value)} placeholder="输入邮件ID" className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+                <textarea value={mailId} onChange={e => setMailId(e.target.value)} placeholder="输入邮件ID，多个用换行或逗号分隔" rows={3} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none" />
               )}
             </div>
 
@@ -1156,7 +1156,7 @@ export default function GameWelfarePage() {
                         ? [...selectedCumulativeIndices].map(i => cumulativeConfigs[i].value)
                         : useVideoGift
                         ? [...selectedVideoGiftIndices].map(i => videoGiftConfigs[i].mail_id)
-                        : [mailId.trim()];
+                        : mailId.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
                       return selectedRoles.flatMap(role =>
                         mailIds.map(mail_id => {
                           const key = role.role_id + '|' + mail_id;
