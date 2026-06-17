@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   const metadata = new grpc.Metadata();
   metadata.set('token', token);
 
-  const req_body = { game_id: Number(game_id), zone, role_id, world_id, mail_id };
+  const req_body = { game_id: Number(game_id), zone, role_id, world_id, mail_id, business_name: '自动发奖工具' };
   console.log('[SendEmail] request:', JSON.stringify(req_body));
 
   return new Promise<NextResponse>((resolve) => {

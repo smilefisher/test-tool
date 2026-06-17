@@ -39,6 +39,7 @@ message SendEmailRequest{
   string mail_id = 5;
   string code = 6;
   string role_uin = 7;
+  string business_name = 8;
 }
 
 

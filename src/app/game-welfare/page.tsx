@@ -165,14 +165,35 @@ export default function GameWelfarePage() {
   const [wheelLotteries, setWheelLotteries] = useState<WheelLotteryInfo[]>([]);
   const [wheelLotteryPage, setWheelLotteryPage] = useState(1);
   const [wheelLotteryHasMore, setWheelLotteryHasMore] = useState(false);
-  const [wheelLotteryTotal, setWheelLotteryTotal] = useState(0);
   interface WheelPrizeItem { id: string; name: string; icon: string; num: number; prop_id: string; section: 'prize' | 'cumulative'; times?: number; guide_text?: string; canSend: boolean; }
+
+// gRPC 响应类型 (protoLoader: longs=String, keepCase=true, defaults=true)
+interface GiftDescResponse { icon: string; content: string; quantity: number; }
+interface VideoGiftConfigResponse {
+  id: string; index: number; server_id: string; sort_order: number;
+  current_gifts: GiftDescResponse[]; current_mail_id: string; current_start_time: string;
+  backup_type: number; backup_gifts: GiftDescResponse[]; backup_mail_id: string;
+  backup_start_time: string; backup_end_time: string;
+}
+interface ExtraGiftResponse { type: number; content: string; icon: string; prop_id: string; quantity: string; expiration: string; num_desc: string; }
+interface CumulativeConfigResponse {
+  day: number; type: number; value: string; icon: string; description: string;
+  num_desc: string; id: string; server_id: string; status: number; name: string;
+  extra_gifts: ExtraGiftResponse[];
+}
+interface WheelLotteryResponse {
+  id: string; circle_id: string; lottery_name: string; single_demand_coin: number;
+  need_bind_role: boolean; background: string; logo: string; start_time: string; end_time: string;
+  rule: string; status: boolean; lottery_type: number; has_cumulative_prize: boolean;
+}
+interface WheelLotteryPrizeResponse { id: string; lottery_id: string; name: string; icon: string; num: number; total: number; percent: number; prize_type: number; prop_id: string; }
+interface WheelLotteryCumulativePrizeResponse { id: string; lottery_id: string; times: number; guide_text: string; name: string; icon: string; num: number; total: number; prize_type: number; prop_id: string; status: number; }
   const [wheelPrizes, setWheelPrizes] = useState<WheelPrizeItem[]>([]);
   const [selectedLotteryId, setSelectedLotteryId] = useState('');
   const [useWheelLottery, setUseWheelLottery] = useState(false);
   const [selectedWheelPrizeIndices, setSelectedWheelPrizeIndices] = useState<Set<number>>(new Set());
   const [wheelDropdownOpen, setWheelDropdownOpen] = useState(false);
-  const wheelDropdownRef = useRef<HTMLDivElement>(null);
+  const wheelDropdownRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!wheelDropdownOpen) return;
@@ -228,7 +249,13 @@ export default function GameWelfarePage() {
       if (res.ok) {
         const data = await res.json();
         const now = Date.now() / 1000;
-        const configs = (data.configs || []).map((c: Record<string, unknown>) => {
+        const parseGifts = (gifts: GiftDescResponse[]): GiftInfo[] =>
+          (gifts || []).map(g => ({
+            content: String(g.content || ''),
+            icon: String(g.icon || ''),
+            quantity: Number(g.quantity || 0),
+          }));
+        const configs = (data.configs as VideoGiftConfigResponse[] || []).map((c) => {
           const backupType = Number(c.backup_type || 0);
           const backupStart = Number(c.backup_start_time || 0);
           const backupEnd = Number(c.backup_end_time || 0);
@@ -238,12 +265,6 @@ export default function GameWelfarePage() {
           } else if (backupType === 2) {
             useBackup = now > backupStart;
           }
-          const parseGifts = (raw: unknown): GiftInfo[] =>
-            (raw as Array<Record<string, unknown>> || []).map(g => ({
-              content: String(g.content || ''),
-              icon: String(g.icon || ''),
-              quantity: Number(g.quantity || 0),
-            }));
           const currentGifts = parseGifts(c.current_gifts);
           const backupGifts = parseGifts(c.backup_gifts);
           const gifts = useBackup && backupGifts.length > 0 ? backupGifts : currentGifts;
@@ -280,14 +301,14 @@ export default function GameWelfarePage() {
       });
       if (res.ok) {
         const data = await res.json();
-        const items = (data.list || []).map((c: Record<string, unknown>) => ({
+        const items = ((data.list || []) as CumulativeConfigResponse[]).map((c) => ({
           day: Number(c.day),
           value: String(c.value || ''),
           icon: String(c.icon || ''),
           name: String(c.name || ''),
           description: String(c.description || ''),
           num_desc: String(c.num_desc || ''),
-          extraGifts: ((c.extra_gifts as Array<Record<string, unknown>>) || []).map(g => ({
+          extraGifts: (c.extra_gifts || []).map(g => ({
             content: String(g.content || ''),
             icon: String(g.icon || ''),
             quantity: Number(g.quantity || 0),
@@ -316,7 +337,7 @@ export default function GameWelfarePage() {
       });
       if (res.ok) {
         const data = await res.json();
-        const items = (data.list || []).map((l: Record<string, unknown>) => ({
+        const items = ((data.list || []) as WheelLotteryResponse[]).map((l) => ({
           id: String(l.id || ''),
           lottery_name: String(l.lottery_name || ''),
           start_time: String(l.start_time || ''),
@@ -324,7 +345,6 @@ export default function GameWelfarePage() {
           has_cumulative_prize: Boolean(l.has_cumulative_prize),
         }));
         setWheelLotteries(items);
-        setWheelLotteryTotal(Number(data.total || 0));
         setWheelLotteryHasMore(items.length === WHEEL_LOTTERY_PAGE_SIZE);
         if (items.length > 0 && (resetSelection || (!selectedLotteryId && page === 1))) {
           setSelectedLotteryId(items[0].id);
@@ -348,16 +368,15 @@ export default function GameWelfarePage() {
       ]);
       const prizes = prizesRes.ok ? (await prizesRes.json()).list || [] : [];
       const cumulative = cumulativeRes.ok ? (await cumulativeRes.json()).list || [] : [];
-      // 仅 WheelLotteryGiftType_Game = 1 游戏礼包可选下发
       const all: WheelPrizeItem[] = [
-        ...(prizes as Array<Record<string, unknown>>)
-          .map((p: Record<string, unknown>) => ({
+        ...(prizes as WheelLotteryPrizeResponse[])
+          .map((p) => ({
             id: String(p.id || ''), name: String(p.name || ''), icon: String(p.icon || ''),
             num: Number(p.num || 0), prop_id: String(p.prop_id || ''), section: 'prize' as const,
             canSend: Number(p.prize_type) === 1,
           })),
-        ...(cumulative as Array<Record<string, unknown>>)
-          .map((p: Record<string, unknown>) => ({
+        ...(cumulative as WheelLotteryCumulativePrizeResponse[])
+          .map((p) => ({
             id: String(p.id || ''), name: String(p.name || ''), icon: String(p.icon || ''),
             num: Number(p.num || 0), prop_id: String(p.prop_id || ''), section: 'cumulative' as const,
             times: Number(p.times || 0), guide_text: String(p.guide_text || ''),

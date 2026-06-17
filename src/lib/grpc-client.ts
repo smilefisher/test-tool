@@ -31,7 +31,7 @@ type GameClient = {
     callback: (err: grpc.ServiceError | null, reply: unknown) => void
   ) => void;
   SendEmail: (
-    req: { game_id: number; zone: string; role_id: string; world_id: string; mail_id: string; code?: string; role_uin?: string },
+    req: { game_id: number; zone: string; role_id: string; world_id: string; mail_id: string; code?: string; role_uin?: string; business_name?: string },
     metadata: grpc.Metadata,
     callback: (err: grpc.ServiceError | null, reply: unknown) => void
   ) => void;
