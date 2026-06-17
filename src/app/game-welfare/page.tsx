@@ -369,19 +369,17 @@ interface WheelLotteryCumulativePrizeResponse { id: string; lottery_id: string; 
       const prizes = prizesRes.ok ? (await prizesRes.json()).list || [] : [];
       const cumulative = cumulativeRes.ok ? (await cumulativeRes.json()).list || [] : [];
       const all: WheelPrizeItem[] = [
-        ...(prizes as WheelLotteryPrizeResponse[])
-          .map((p) => ({
-            id: String(p.id || ''), name: String(p.name || ''), icon: String(p.icon || ''),
-            num: Number(p.num || 0), prop_id: String(p.prop_id || ''), section: 'prize' as const,
-            canSend: Number(p.prize_type) === 1,
-          })),
-        ...(cumulative as WheelLotteryCumulativePrizeResponse[])
-          .map((p) => ({
-            id: String(p.id || ''), name: String(p.name || ''), icon: String(p.icon || ''),
-            num: Number(p.num || 0), prop_id: String(p.prop_id || ''), section: 'cumulative' as const,
-            times: Number(p.times || 0), guide_text: String(p.guide_text || ''),
-            canSend: Number(p.prize_type) === 1,
-          })),
+        ...(prizes as WheelLotteryPrizeResponse[]).map((p): WheelPrizeItem => ({
+          id: String(p.id || ''), name: String(p.name || ''), icon: String(p.icon || ''),
+          num: Number(p.num || 0), prop_id: String(p.prop_id || ''), section: 'prize',
+          canSend: Number(p.prize_type) === 1,
+        })),
+        ...(cumulative as WheelLotteryCumulativePrizeResponse[]).map((p): WheelPrizeItem => ({
+          id: String(p.id || ''), name: String(p.name || ''), icon: String(p.icon || ''),
+          num: Number(p.num || 0), prop_id: String(p.prop_id || ''), section: 'cumulative',
+          times: Number(p.times || 0), guide_text: String(p.guide_text || ''),
+          canSend: Number(p.prize_type) === 1,
+        })),
       ];
       setWheelPrizes(all);
       setSelectedWheelPrizeIndices(new Set());
