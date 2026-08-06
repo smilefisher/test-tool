@@ -14,6 +14,8 @@ const GAME_OPTIONS = [
   { label: 'S6', name: '无限轮回', value: 11 },
   { label: 'A7', name: '元气战纪', value: 12 },
   { label: 'D5', name: '楚新钓', value: 13 },
+  { label: 'A10', name: '俱乐大玩家', value: 15 },
+  { label: 'A9', name: '朋友别眨眼', value: 17 },
 ];
 
 const ENV_OPTIONS = [
@@ -92,6 +94,13 @@ const ZONE_MAP: Record<number, ZoneGroup[]> = {
     { group: '5大区', zones: [{ value: 'D5_ZONE5_EMAIL', desc: '快小' }] },
     { group: '13大区', zones: [{ value: 'D5_ZONE13_EMAIL', desc: '支付宝' }] },
     { group: '20大区', zones: [{ value: 'D5_ZONE20_EMAIL', desc: '350' }] },
+  ],
+  15: [ // A10
+    { group: '1大区', zones: [{ value: 'A10_ZONE1', desc: 'Android' }] },
+    { group: '2大区', zones: [{ value: 'A10_ZONE2_iOS', desc: 'iOS' }, { value: 'A10_ZONE2_WX', desc: '微小' }, { value: 'A10_ZONE2_DY', desc: '抖小' }] },
+  ],
+  17: [ // A9
+    { group: '1大区', zones: [{ value: 'A9_ZONE1', desc: 'Android & iOS' }] },
   ],
 };
 
