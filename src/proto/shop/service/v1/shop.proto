@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package shop.service.v1;
+
+option go_package = "gamping/shop/service/v1;v1";
+
+service shop {
+  rpc GetWheelLotteryList(GetWheelLotteryListReq) returns (GetWheelLotteryListReply) {}
+  rpc GetWheelLotteryPrizes(GetWheelLotteryPrizesReq) returns (GetWheelLotteryPrizesReply) {}
+  rpc GetWheelLotteryCumulativePrizes(GetWheelLotteryCumulativePrizesReq) returns (GetWheelLotteryCumulativePrizesReply) {}
+}
+
+message GetWheelLotteryListReq {
+  int32 page = 1;
+  int32 page_size = 2;
+  string circle_id = 3;
+  int32 lottery_type = 4;
+  bool effect_status = 5;
+}
+
+message GetWheelLotteryListReply {
+  repeated WheelLottery list = 1;
+  int64 total = 2;
+}
+
+message WheelLottery {
+  string id = 1;
+  string circle_id = 2;
+  string lottery_name = 3;
+  int32 single_demand_coin = 4;
+  bool need_bind_role = 5;
+  string background = 6;
+  string logo = 7;
+  int64 start_time = 10;
+  int64 end_time = 11;
+  string rule = 13;
+  bool status = 14;
+  int32 lottery_type = 15;
+  bool has_cumulative_prize = 21;
+}
+
+message GetWheelLotteryPrizesReq {
+  string wheel_lottery_id = 1;
+  bool is_admin = 2;
+}
+
+message GetWheelLotteryPrizesReply {
+  repeated WheelLotteryPrize list = 1;
+}
+
+message WheelLotteryPrize {
+  string id = 1;
+  string lottery_id = 2;
+  string name = 3;
+  string icon = 4;
+  int32 num = 5;
+  int32 total = 6;
+  int32 percent = 7;
+  int32 prize_type = 8;
+  string prop_id = 9;
+}
+
+message GetWheelLotteryCumulativePrizesReq {
+  string wheel_lottery_id = 1;
+  bool is_admin = 2;
+}
+
+message GetWheelLotteryCumulativePrizesReply {
+  repeated WheelLotteryCumulativePrize list = 1;
+}
+
+message WheelLotteryCumulativePrize {
+  string id = 1;
+  string lottery_id = 2;
+  int32 times = 3;
+  string guide_text = 4;
+  string name = 5;
+  string icon = 6;
+  int32 num = 7;
+  int32 total = 8;
+  int32 prize_type = 9;
+  string prop_id = 10;
+  int32 status = 11;
+}

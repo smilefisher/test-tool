@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package api.third.game.v1;
+
+option go_package = "gamping/api/third/game/v1;v1";
+option java_multiple_files = true;
+option java_package = "api.third.game.v1";
+
+import "common/v1/common.proto";
+
+service Game {
+  rpc GetRoleByRoleID(GetRoleByRoleIDRequest) returns (GetRoleByRoleIDReply) {}
+  rpc SendEmail(SendEmailRequest) returns (SendEmailReply) {}
+}
+
+message GetRoleByRoleIDRequest {
+  common.v1.GameID game_id = 1;
+  string zone = 2;
+  string role_id = 3;
+}
+
+message GetRoleByRoleIDReply {
+  string platform_uin = 1;
+  string channel_type = 2;
+  string role_uin = 3;
+  string role_id = 4;
+  string role_name = 5;
+  string level = 6;
+  string avatar = 7;
+  string world_id = 9;
+  string world_name = 10;
+}
+
+message SendEmailRequest{
+  common.v1.GameID game_id = 1;
+  string zone = 2;
+  string role_id = 3;
+  string world_id = 4;
+  string mail_id = 5;
+  string code = 6;
+  string role_uin = 7;
+  string business_name = 8;
+}
+
+
+message SendEmailReply{
+  string uin = 1;
+  string avatar = 2;
+  string role_name = 3;
+}
+

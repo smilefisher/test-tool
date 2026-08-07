@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package common.v1;
+
+option go_package = "gamping/common/v1;v1";
+
+enum GameID {
+  GAME_ID_UNSPECIFIED = 0;
+  A5 = 3;
+  T5 = 4;
+  C6 = 5;
+  X5 = 6;
+  X3 = 7;
+  K5 = 8;
+  X6 = 9;
+  D3 = 10;
+  S6 = 11;
+  A7 = 12;
+  D5 = 13;
+  D6 = 14;
+}

@@ -94,12 +94,20 @@ export default function Home() {
             </div>
             <h1 className="text-xl font-semibold text-slate-800">测试辅助工具</h1>
           </div>
-          <Link
-            href="/admin"
-            className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            管理工具
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/game-welfare"
+              className="px-4 py-2 text-sm font-medium text-orange-600 hover:text-orange-800 transition-colors"
+            >
+              游戏福利下发
+            </Link>
+            <Link
+              href="/admin"
+              className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+            >
+              管理工具
+            </Link>
+          </div>
         </div>
       </header>
 

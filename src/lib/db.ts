@@ -51,16 +51,43 @@ export interface ToolWithDetails extends Tool {
   steps: (ToolStep & { connection?: Connection })[];
 }
 
+export interface ApiToken {
+  id: number;
+  name: string;
+  value: string;
+  created_at: string;
+}
+
+export interface EmailRecord {
+  id: number;
+  game_id: number;
+  game_label: string;
+  zone: string;
+  role_id: string;
+  role_name: string;
+  world_id: string;
+  world_name: string;
+  mail_id: string;
+  env: string;
+  success: boolean;
+  error_msg: string | null;
+  created_at: string;
+}
+
 interface Database {
   connections: Connection[];
   tools: Tool[];
   tool_params: ToolParam[];
   tool_steps: ToolStep[];
+  api_tokens: ApiToken[];
+  email_records: EmailRecord[];
   nextIds: {
     connections: number;
     tools: number;
     tool_params: number;
     tool_steps: number;
+    api_tokens: number;
+    email_records: number;
   };
 }
 
@@ -70,11 +97,15 @@ function getDefaultDb(): Database {
     tools: [],
     tool_params: [],
     tool_steps: [],
+    api_tokens: [],
+    email_records: [],
     nextIds: {
       connections: 1,
       tools: 1,
       tool_params: 1,
       tool_steps: 1,
+      api_tokens: 1,
+      email_records: 1,
     },
   };
 }
@@ -92,6 +123,11 @@ function loadDb(): Database {
   if (fs.existsSync(dbPath)) {
     const data = fs.readFileSync(dbPath, 'utf-8');
     cachedDb = JSON.parse(data);
+    // migrate existing data that lacks api_tokens
+    if (!cachedDb!.api_tokens) cachedDb!.api_tokens = [];
+    if (!cachedDb!.nextIds.api_tokens) cachedDb!.nextIds.api_tokens = 1;
+    if (!cachedDb!.email_records) cachedDb!.email_records = [];
+    if (!cachedDb!.nextIds.email_records) cachedDb!.nextIds.email_records = 1;
   } else {
     cachedDb = getDefaultDb();
     saveDb();
@@ -273,4 +309,62 @@ export async function deleteTool(id: number): Promise<boolean> {
   db.tool_steps = db.tool_steps.filter(s => s.tool_id !== id);
   saveDb();
   return true;
+}
+
+export async function getAllApiTokens(): Promise<ApiToken[]> {
+  const db = loadDb();
+  return db.api_tokens.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+export async function createApiToken(name: string, value: string): Promise<number> {
+  const db = loadDb();
+  const id = db.nextIds.api_tokens++;
+  db.api_tokens.push({ id, name, value, created_at: new Date().toISOString() });
+  saveDb();
+  return id;
+}
+
+export async function deleteApiToken(id: number): Promise<boolean> {
+  const db = loadDb();
+  const index = db.api_tokens.findIndex(t => t.id === id);
+  if (index === -1) return false;
+  db.api_tokens.splice(index, 1);
+  saveDb();
+  return true;
+}
+
+export async function createEmailRecord(data: Omit<EmailRecord, 'id' | 'created_at'>): Promise<number> {
+  const db = loadDb();
+  const id = db.nextIds.email_records++;
+  db.email_records.push({ ...data, id, created_at: new Date().toISOString() });
+  saveDb();
+  return id;
+}
+
+export async function queryEmailRecords(opts: {
+  page: number;
+  pageSize: number;
+  todayOnly: boolean;
+  game_id?: number;
+  role_id?: string;
+}): Promise<{ total: number; records: EmailRecord[] }> {
+  const db = loadDb();
+  let records = [...db.email_records];
+
+  if (opts.todayOnly) {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    records = records.filter(r => r.created_at.startsWith(todayStr));
+  }
+  if (opts.game_id != null) {
+    records = records.filter(r => r.game_id === opts.game_id);
+  }
+  if (opts.role_id) {
+    records = records.filter(r => r.role_id === opts.role_id);
+  }
+
+  records.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  const total = records.length;
+  const start = (opts.page - 1) * opts.pageSize;
+  return { total, records: records.slice(start, start + opts.pageSize) };
 }
