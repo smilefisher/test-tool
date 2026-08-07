@@ -259,9 +259,10 @@ export async function executeMongodb(command: string, connection?: Connection | 
       throw new Error(validation.error);
     }
 
-    if (normalizedCmd.includes('\n')) {
+    // 按括号深度在顶层换行处分割，避免括号内的换行被切断
+    const commands = splitTopLevelCommands(normalizedCmd);
+    if (commands.length > 1) {
       const results: unknown[] = [];
-      const commands = normalizedCmd.split('\n').filter(c => c.trim());
       for (const cmd of commands) {
         const cmdValidation = validateMongodb(cmd.trim());
         if (!cmdValidation.valid) {
@@ -279,14 +280,111 @@ export async function executeMongodb(command: string, connection?: Connection | 
   }
 }
 
+// 在顶层换行处分割多条命令（括号/字符串内部的换行不分割）
+// 单独的 use xxx; 会合并到下一行
+function splitTopLevelCommands(cmd: string): string[] {
+  const raw: string[] = [];
+  let depth = 0;
+  let inString = false;
+  let stringChar = '';
+  let start = 0;
+
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+
+    if (inString) {
+      if (ch === '\\') { i++; continue; }
+      if (ch === stringChar) inString = false;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      stringChar = ch;
+      continue;
+    }
+
+    if (ch === '{' || ch === '[') depth++;
+    else if (ch === '}' || ch === ']') depth--;
+    else if (ch === '\n' && depth === 0) {
+      const part = cmd.slice(start, i).trim();
+      if (part) raw.push(part);
+      start = i + 1;
+    }
+  }
+
+  const last = cmd.slice(start).trim();
+  if (last) raw.push(last);
+
+  // 合并单独的 use xxx; 到下一行
+  const result: string[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    if (/^use\s+\w+\s*;?\s*$/i.test(raw[i]) && i + 1 < raw.length) {
+      result.push(raw[i] + ' ' + raw[i + 1]);
+      i++;
+    } else {
+      result.push(raw[i]);
+    }
+  }
+
+  return result;
+}
+
+// 移除循环引用，确保结果可被 JSON 序列化
+function safeSerialize(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value));
+}
+
+// 解析多个逗号分隔的 JSON 对象参数，如: {filter}, {update}, {options}
+function parseMongoArgs(argsStr: string): unknown[] {
+  const trimmed = argsStr.trim();
+  if (!trimmed) return [];
+
+  const args: unknown[] = [];
+  let depth = 0;
+  let start = 0;
+  let inString = false;
+  let stringChar = '';
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+
+    if (inString) {
+      if (ch === '\\') { i++; continue; }
+      if (ch === stringChar) inString = false;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      stringChar = ch;
+      continue;
+    }
+
+    if (ch === '{' || ch === '[') depth++;
+    else if (ch === '}' || ch === ']') depth--;
+    else if (ch === ',' && depth === 0) {
+      args.push(JSON.parse(trimmed.slice(start, i).trim()));
+      start = i + 1;
+    }
+  }
+
+  // 最后一个参数
+  const last = trimmed.slice(start).trim();
+  if (last) args.push(JSON.parse(last));
+
+  return args;
+}
+
 async function executeSingleMongoCmd(client: MongoClient, cmd: string, defaultDb: string): Promise<unknown> {
   let dbName = defaultDb;
-  let normalizedCmd = cmd.trim();
+  // 把所有换行/多余空格压缩成一个空格，避免换行干扰正则匹配
+  let normalizedCmd = cmd.replace(/\s+/g, ' ').trim().replace(/;+$/, '').trim();
 
   const useMatch = normalizedCmd.match(/^use\s+(\w+)\s*;?\s*(.*)$/i);
   if (useMatch) {
     dbName = useMatch[1];
-    normalizedCmd = useMatch[2].trim();
+    normalizedCmd = useMatch[2].trim().replace(/;+$/, '').trim();
   }
 
   const db = client.db(dbName);
@@ -297,7 +395,7 @@ async function executeSingleMongoCmd(client: MongoClient, cmd: string, defaultDb
   }
 
   const [, collection, method, argsStr] = match;
-  const args = JSON.parse(argsStr);
+  const parsedArgs = parseMongoArgs(argsStr);
 
   const coll = db.collection(collection);
   const mongoMethod = (coll as unknown as Record<string, Function>)[method];
@@ -306,7 +404,15 @@ async function executeSingleMongoCmd(client: MongoClient, cmd: string, defaultDb
     throw new Error(`Unknown MongoDB method: ${method}`);
   }
 
-  return await mongoMethod.call(coll, args);
+  const rawResult = await mongoMethod.apply(coll, parsedArgs);
+
+  // find() / aggregate() 返回 Cursor，需要 toArray() 才能拿到数据
+  if (rawResult && typeof rawResult.toArray === 'function') {
+    return safeSerialize(await rawResult.toArray());
+  }
+
+  // 其他方法（insertOne、updateOne 等）用 JSON 序列化去掉 MongoClient 等循环引用
+  return safeSerialize(rawResult);
 }
 
 export function replaceParams(template: string, params: Record<string, string>): string {
