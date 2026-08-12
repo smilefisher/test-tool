@@ -4,16 +4,15 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ToolParam, DbType } from '@/lib/types';
+import MongoStepEditor from '@/components/MongoStepEditor';
+import { createMongoConfig, getMongoConfigError, parseMongoConfig, stringifyMongoConfig, tryConvertLegacyMongoCommand } from '@/lib/mongodb-config';
 
 interface Step {
   db_type: DbType;
   command: string;
   description: string | null;
   connection_id: number | null;
-}
-
-interface ToolWithSteps extends ToolParam {
-  steps: Step[];
+  output_key: string | null;
 }
 
 interface Connection {
@@ -32,6 +31,8 @@ const PARAM_TYPES = [
   { value: 'string', label: '字符串' },
   { value: 'number', label: '数字' },
   { value: 'boolean', label: '布尔值' },
+  { value: 'date', label: '日期' },
+  { value: 'datetime', label: '日期时间' },
 ];
 
 export default function EditToolPage() {
@@ -47,45 +48,42 @@ export default function EditToolPage() {
   const [connections, setConnections] = useState<Connection[]>([]);
 
   useEffect(() => {
-    if (params.id) {
-      fetchTool(params.id as string);
-      fetchConnections();
+    const id = params.id as string | undefined;
+    if (!id) return;
+
+    async function loadPage() {
+      try {
+        const [toolRes, connectionsRes] = await Promise.all([
+          fetch(`/api/tools/${id}`),
+          fetch('/api/connections'),
+        ]);
+        if (!toolRes.ok) throw new Error('Tool not found');
+        const [data, connectionsData] = await Promise.all([toolRes.json(), connectionsRes.json()]);
+        setName(data.name);
+        setDescription(data.description || '');
+        setParamsList(data.params.map((param: ToolParam) => ({
+          ...param,
+          required: Boolean(param.required),
+        })));
+        setSteps(data.steps.map((step: Step) => {
+          const converted = step.db_type === 'mongodb' ? tryConvertLegacyMongoCommand(step.command) : null;
+          return {
+            db_type: step.db_type,
+            command: converted ? stringifyMongoConfig(converted) : step.command,
+            description: step.description,
+            connection_id: step.connection_id || null,
+            output_key: step.output_key || null,
+          };
+        }));
+        setConnections(connectionsData);
+      } catch (error) {
+        console.error('Failed to load tool:', error);
+      } finally {
+        setLoading(false);
+      }
     }
+    void loadPage();
   }, [params.id]);
-
-  async function fetchTool(id: string) {
-    try {
-      const res = await fetch(`/api/tools/${id}`);
-      if (!res.ok) throw new Error('Tool not found');
-      const data = await res.json();
-      setName(data.name);
-      setDescription(data.description || '');
-      setParamsList(data.params.map((p: ToolParam) => ({
-        ...p,
-        required: Boolean(p.required),
-      })));
-      setSteps(data.steps.map((s: Step) => ({
-        db_type: s.db_type,
-        command: s.command,
-        description: s.description,
-        connection_id: (s as unknown as { connection_id?: number }).connection_id || null,
-      })));
-    } catch (error) {
-      console.error('Failed to fetch tool:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function fetchConnections() {
-    try {
-      const res = await fetch('/api/connections');
-      const data = await res.json();
-      setConnections(data);
-    } catch (error) {
-      console.error('Failed to fetch connections:', error);
-    }
-  }
 
   function addParam() {
     setParamsList([...paramsList, { name: '', label: '', param_type: 'string', default_value: null, required: false }]);
@@ -102,7 +100,7 @@ export default function EditToolPage() {
   }
 
   function addStep() {
-    setSteps([...steps, { db_type: 'mysql', command: '', description: null, connection_id: null }]);
+    setSteps([...steps, { db_type: 'mysql', command: '', description: null, connection_id: null, output_key: null }]);
   }
 
   function removeStep(index: number) {
@@ -112,6 +110,17 @@ export default function EditToolPage() {
   function updateStep(index: number, field: keyof Step, value: string | number | null) {
     const newSteps = [...steps];
     newSteps[index] = { ...newSteps[index], [field]: value };
+    setSteps(newSteps);
+  }
+
+  function updateStepType(index: number, dbType: DbType) {
+    const newSteps = [...steps];
+    newSteps[index] = {
+      ...newSteps[index],
+      db_type: dbType,
+      command: dbType === 'mongodb' ? stringifyMongoConfig(createMongoConfig()) : '',
+      connection_id: null,
+    };
     setSteps(newSteps);
   }
 
@@ -141,6 +150,16 @@ export default function EditToolPage() {
     if (incompleteParams.length > 0) {
       alert('参数填写不完整：请确保每个参数的名称和标签都已填写');
       return;
+    }
+
+    for (const step of steps) {
+      if (step.db_type !== 'mongodb') continue;
+      const config = parseMongoConfig(step.command);
+      const mongoError = config ? getMongoConfigError(config) : 'MongoDB 步骤尚未转换为结构化配置';
+      if (mongoError) {
+        alert(mongoError);
+        return;
+      }
     }
 
     setSaving(true);
@@ -348,7 +367,7 @@ export default function EditToolPage() {
                         </span>
                         <select
                           value={step.db_type}
-                          onChange={(e) => updateStep(index, 'db_type', e.target.value)}
+                          onChange={(e) => updateStepType(index, e.target.value as DbType)}
                           className="px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-medium"
                         >
                           {DB_TYPES.map((t) => (
@@ -373,6 +392,14 @@ export default function EditToolPage() {
                           onChange={(e) => updateStep(index, 'description', e.target.value)}
                           placeholder="步骤说明（可选）"
                           className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        />
+                        <input
+                          type="text"
+                          value={step.output_key || ''}
+                          onChange={(e) => updateStep(index, 'output_key', e.target.value || null)}
+                          placeholder="输出变量名"
+                          className="w-28 px-3 py-1.5 border border-dashed border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm font-mono"
+                          title="设置后下一步可用 {{变量名.field}} 引用本步结果"
                         />
                         <div className="flex items-center gap-1">
                           <button
@@ -406,17 +433,21 @@ export default function EditToolPage() {
                           </button>
                         </div>
                       </div>
-                      <textarea
-                        value={step.command}
-                        onChange={(e) => {
-                          updateStep(index, 'command', e.target.value);
-                          e.target.style.height = 'auto';
-                          e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
-                        }}
-                        rows={2}
-                        style={{ minHeight: '60px', height: 'auto', maxHeight: '200px' }}
-                        className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-sm font-mono resize-none transition-all"
-                      />
+                      {step.db_type === 'mongodb' ? (
+                        <MongoStepEditor command={step.command} onChange={(command) => updateStep(index, 'command', command)} />
+                      ) : (
+                        <textarea
+                          value={step.command}
+                          onChange={(e) => {
+                            updateStep(index, 'command', e.target.value);
+                            e.target.style.height = 'auto';
+                            e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+                          }}
+                          rows={2}
+                          style={{ minHeight: '60px', height: 'auto', maxHeight: '200px' }}
+                          className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-sm font-mono resize-none transition-all"
+                        />
+                      )}
                     </div>
                   );
                 })}

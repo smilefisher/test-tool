@@ -1,7 +1,9 @@
 import Redis from 'ioredis';
 import mysql from 'mysql2/promise';
-import { MongoClient } from 'mongodb';
+import { BSON, Document, MongoClient } from 'mongodb';
 import { Connection } from './db';
+import { getMongoConfigError, getMongoRuntimeParamError, MongoStepConfig, normalizeMongoJson, omitEmptyMongoUpdateParams, parseMongoConfig, stringifyMongoConfig } from './mongodb-config';
+import { resolveTimeExpressions } from './template';
 
 interface ValidationResult {
   valid: boolean;
@@ -251,8 +253,13 @@ export async function executeMongodb(command: string, connection?: Connection | 
 
   try {
     await client.connect();
-    let defaultDb = config.database_name || config.uri?.split('/').pop()?.split('?')[0] || 'test';
+    const defaultDb = config.database_name || config.uri?.split('/').pop()?.split('?')[0] || 'test';
     const normalizedCmd = command.trim();
+    const structuredConfig = parseMongoConfig(normalizedCmd);
+
+    if (structuredConfig) {
+      return await executeStructuredMongoCmd(client, structuredConfig);
+    }
 
     const validation = validateMongodb(normalizedCmd);
     if (!validation.valid) {
@@ -332,7 +339,95 @@ function splitTopLevelCommands(cmd: string): string[] {
 
 // 移除循环引用，确保结果可被 JSON 序列化
 function safeSerialize(value: unknown): unknown {
-  return JSON.parse(JSON.stringify(value));
+  return JSON.parse(BSON.EJSON.stringify(value, { relaxed: false }));
+}
+
+function parseExtendedJson(value: string | undefined, fallback: string): unknown {
+  try {
+    return BSON.EJSON.parse(normalizeMongoJson(value?.trim() || fallback), { relaxed: false });
+  } catch (error) {
+    throw new Error(`MongoDB JSON 格式错误: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function assertDocument(value: unknown, field: string): Document {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${field} 必须是 JSON 对象`);
+  }
+  return value as Document;
+}
+
+async function executeStructuredMongoCmd(client: MongoClient, config: MongoStepConfig): Promise<unknown> {
+  const validationError = getMongoConfigError(config);
+  if (validationError) throw new Error(validationError);
+
+  const collection = client.db(config.database).collection(config.collection);
+  const filter = assertDocument(parseExtendedJson(config.filter, '{}'), 'Filter');
+  const options = assertDocument(parseExtendedJson(config.options, '{}'), 'Options');
+  let result: unknown;
+
+  switch (config.operation) {
+    case 'find': {
+      const projection = assertDocument(parseExtendedJson(config.projection, '{}'), 'Projection');
+      const sort = assertDocument(parseExtendedJson(config.sort, '{}'), 'Sort');
+      const limit = Math.min(Math.max(config.limit ?? 100, 1), 1000);
+      let cursor = collection.find(filter, { ...options, projection }).skip(Math.max(config.skip ?? 0, 0)).limit(limit);
+      if (Object.keys(sort).length > 0) cursor = cursor.sort(sort);
+      result = await cursor.toArray();
+      break;
+    }
+    case 'findOne': {
+      const projection = assertDocument(parseExtendedJson(config.projection, '{}'), 'Projection');
+      result = await collection.findOne(filter, { ...options, projection });
+      break;
+    }
+    case 'countDocuments':
+      result = await collection.countDocuments(filter, options);
+      break;
+    case 'insertOne':
+      result = await collection.insertOne(assertDocument(parseExtendedJson(config.document, '{}'), 'Document'), options);
+      break;
+    case 'insertMany': {
+      const documents = parseExtendedJson(config.documents, '[]');
+      if (!Array.isArray(documents) || documents.some(document => !document || typeof document !== 'object' || Array.isArray(document))) {
+        throw new Error('Documents 必须是 JSON 对象数组');
+      }
+      result = await collection.insertMany(documents as Document[], options);
+      break;
+    }
+    case 'updateOne':
+    case 'updateMany': {
+      if (config.operation === 'updateMany' && Object.keys(filter).length === 0) {
+        throw new Error('禁止使用空 Filter 执行 updateMany');
+      }
+      const update = assertDocument(parseExtendedJson(config.update, '{}'), 'Update');
+      result = config.operation === 'updateOne'
+        ? await collection.updateOne(filter, update, options)
+        : await collection.updateMany(filter, update, options);
+      break;
+    }
+    case 'replaceOne':
+      result = await collection.replaceOne(filter, assertDocument(parseExtendedJson(config.replacement, '{}'), 'Replacement'), options);
+      break;
+    case 'deleteOne':
+      result = await collection.deleteOne(filter, options);
+      break;
+    case 'deleteMany':
+      if (Object.keys(filter).length === 0) throw new Error('禁止使用空 Filter 执行 deleteMany');
+      result = await collection.deleteMany(filter, options);
+      break;
+    case 'aggregate': {
+      const pipeline = parseExtendedJson(config.pipeline, '[]');
+      if (!Array.isArray(pipeline)) throw new Error('Pipeline 必须是 JSON 数组');
+      if (pipeline.some(stage => stage && typeof stage === 'object' && ('$out' in stage || '$merge' in stage))) {
+        throw new Error('Pipeline 禁止使用 $out 或 $merge');
+      }
+      result = await collection.aggregate(pipeline as Document[], options).toArray();
+      break;
+    }
+  }
+
+  return safeSerialize(result);
 }
 
 // 解析多个逗号分隔的 JSON 对象参数，如: {filter}, {update}, {options}
@@ -398,7 +493,7 @@ async function executeSingleMongoCmd(client: MongoClient, cmd: string, defaultDb
   const parsedArgs = parseMongoArgs(argsStr);
 
   const coll = db.collection(collection);
-  const mongoMethod = (coll as unknown as Record<string, Function>)[method];
+  const mongoMethod = (coll as unknown as Record<string, (...args: unknown[]) => unknown>)[method];
 
   if (typeof mongoMethod !== 'function') {
     throw new Error(`Unknown MongoDB method: ${method}`);
@@ -407,7 +502,12 @@ async function executeSingleMongoCmd(client: MongoClient, cmd: string, defaultDb
   const rawResult = await mongoMethod.apply(coll, parsedArgs);
 
   // find() / aggregate() 返回 Cursor，需要 toArray() 才能拿到数据
-  if (rawResult && typeof rawResult.toArray === 'function') {
+  if (
+    rawResult
+    && typeof rawResult === 'object'
+    && 'toArray' in rawResult
+    && typeof rawResult.toArray === 'function'
+  ) {
     return safeSerialize(await rawResult.toArray());
   }
 
@@ -415,25 +515,97 @@ async function executeSingleMongoCmd(client: MongoClient, cmd: string, defaultDb
   return safeSerialize(rawResult);
 }
 
-export function replaceParams(template: string, params: Record<string, string>): string {
-  let result = template;
-  for (const [key, value] of Object.entries(params)) {
-    const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-    result = result.replace(regex, value);
+// 支持 {{param}} 和 {{outputKey.field.path}} 两种占位符
+export function replaceParams(
+  template: string,
+  params: Record<string, string>,
+  outputs?: Map<string, unknown>
+): string {
+  const resolvedTemplate = resolveTimeExpressions(template);
+  return resolvedTemplate.replace(/\{\{([^}]+)\}\}/g, (match, expr: string) => {
+    const key = expr.trim();
+
+    // 先查参数
+    if (key in params) return params[key];
+
+    // 再查上一步输出: outputKey.field.subfield
+    if (outputs) {
+      const dotIndex = key.indexOf('.');
+      if (dotIndex > 0) {
+        const outputKey = key.slice(0, dotIndex);
+        const fieldPath = key.slice(dotIndex + 1);
+        if (outputs.has(outputKey)) {
+          const val = getNestedValue(outputs.get(outputKey), fieldPath);
+          if (val !== undefined) return String(val);
+        }
+      }
+    }
+
+    return match;
+  });
+}
+
+function getNestedValue(obj: unknown, path: string): unknown {
+  const parts = path.split('.');
+  let current: unknown = obj;
+  for (const p of parts) {
+    if (current == null || typeof current !== 'object') return undefined;
+    if (Array.isArray(current)) {
+      const idx = parseInt(p, 10);
+      if (isNaN(idx)) return undefined;
+      current = (current as unknown[])[idx];
+    } else {
+      current = (current as Record<string, unknown>)[p];
+    }
   }
-  return result;
+  return current;
 }
 
 export async function executeTool(
-  steps: Array<{ db_type: string; command: string; connection?: Connection | null }>,
-  params: Record<string, string>
+  steps: Array<{ db_type: string; command: string; connection?: Connection | null; output_key?: string | null }>,
+  params: Record<string, string>,
+  skipEmptyParams: string[] = [],
 ): Promise<ExecuteResult[]> {
   const results: ExecuteResult[] = [];
+  const outputs = new Map<string, unknown>();
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     const startTime = Date.now();
-    const resolvedCommand = replaceParams(step.command, params);
+    let command = step.command;
+    if (step.db_type === 'mongodb') {
+      const mongoConfig = parseMongoConfig(command);
+      let runtimeConfig = mongoConfig;
+      if (mongoConfig) {
+        const omitted = omitEmptyMongoUpdateParams(mongoConfig, params, skipEmptyParams);
+        if (omitted.skipped) {
+          results.push({
+            success: true,
+            stepIndex: i,
+            dbType: step.db_type,
+            command: stringifyMongoConfig(omitted.config),
+            result: { acknowledged: true, skipped: true, reason: '所有勾选的空参数均已从更新中移除' },
+            duration: Date.now() - startTime,
+          });
+          continue;
+        }
+        runtimeConfig = omitted.config;
+        command = stringifyMongoConfig(omitted.config);
+      }
+      const paramError = runtimeConfig ? getMongoRuntimeParamError(runtimeConfig, params) : null;
+      if (paramError) {
+        results.push({
+          success: false,
+          stepIndex: i,
+          dbType: step.db_type,
+          command,
+          error: paramError,
+          duration: Date.now() - startTime,
+        });
+        break;
+      }
+    }
+    const resolvedCommand = replaceParams(command, params, outputs);
 
     try {
       let result: unknown;
@@ -449,6 +621,11 @@ export async function executeTool(
           break;
         default:
           throw new Error(`Unknown database type: ${step.db_type}`);
+      }
+
+      // 如果设置了 output_key，把结果存起来给后续步骤引用
+      if (step.output_key) {
+        outputs.set(step.output_key, result);
       }
 
       results.push({

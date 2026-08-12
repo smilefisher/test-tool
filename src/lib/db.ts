@@ -44,6 +44,7 @@ export interface ToolStep {
   command: string;
   description: string | null;
   connection_id: number | null;
+  output_key: string | null;
 }
 
 export interface ToolWithDetails extends Tool {
@@ -128,6 +129,10 @@ function loadDb(): Database {
     if (!cachedDb!.nextIds.api_tokens) cachedDb!.nextIds.api_tokens = 1;
     if (!cachedDb!.email_records) cachedDb!.email_records = [];
     if (!cachedDb!.nextIds.email_records) cachedDb!.nextIds.email_records = 1;
+    // migrate existing steps that lack output_key
+    for (const s of cachedDb!.tool_steps) {
+      if (s.output_key === undefined) s.output_key = null;
+    }
   } else {
     cachedDb = getDefaultDb();
     saveDb();

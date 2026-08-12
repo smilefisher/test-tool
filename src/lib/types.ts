@@ -23,6 +23,7 @@ export interface ToolStep {
   db_type: string;
   command: string;
   description: string | null;
+  output_key: string | null;
 }
 
 export interface ToolWithDetails extends Tool {

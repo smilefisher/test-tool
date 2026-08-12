@@ -15,7 +15,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { params: executeParams } = body;
+    const { params: executeParams, skipEmptyParams = [] } = body;
 
     if (!executeParams || typeof executeParams !== 'object') {
       return NextResponse.json({ error: 'Params are required' }, { status: 400 });
@@ -41,8 +41,10 @@ export async function POST(
         db_type: s.db_type,
         command: s.command,
         connection: s.connection || null,
+        output_key: s.output_key || null,
       })),
-      executeParams
+      executeParams,
+      Array.isArray(skipEmptyParams) ? skipEmptyParams.filter(value => typeof value === 'string') : [],
     );
 
     return NextResponse.json({ results });

@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ToolWithDetails, ExecuteResult } from '@/lib/types';
+import { getMongoRuntimeParamError, omitEmptyMongoUpdateParams, parseMongoConfig } from '@/lib/mongodb-config';
+import { resolveTimeExpressions } from '@/lib/template';
 
 const DB_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   redis: { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200' },
@@ -13,39 +15,49 @@ const DB_COLORS: Record<string, { bg: string; text: string; border: string }> = 
 
 export default function ToolDetail() {
   const params = useParams();
-  const router = useRouter();
   const [tool, setTool] = useState<ToolWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [executing, setExecuting] = useState(false);
   const [results, setResults] = useState<ExecuteResult[]>([]);
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
+  const [skipEmptyParams, setSkipEmptyParams] = useState<string[]>([]);
   const [showSteps, setShowSteps] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (params.id) {
-      fetchTool(params.id as string);
+    const id = params.id as string | undefined;
+    if (!id) return;
+
+    async function loadTool() {
+      try {
+        const res = await fetch(`/api/tools/${id}`);
+        if (!res.ok) throw new Error('Tool not found');
+        const data = await res.json();
+        setTool(data);
+
+        let savedValues: Record<string, string> = {};
+        try {
+          const saved = localStorage.getItem(`tool-param-values:${data.id}`);
+          if (saved) savedValues = JSON.parse(saved);
+        } catch {
+          localStorage.removeItem(`tool-param-values:${data.id}`);
+        }
+
+        const initialValues: Record<string, string> = {};
+        data.params.forEach((param: { name: string; default_value: string | null }) => {
+          initialValues[param.name] = typeof savedValues[param.name] === 'string'
+            ? savedValues[param.name]
+            : param.default_value || '';
+        });
+        setParamValues(initialValues);
+      } catch {
+        setError('工具不存在');
+      } finally {
+        setLoading(false);
+      }
     }
+    void loadTool();
   }, [params.id]);
-
-  async function fetchTool(id: string) {
-    try {
-      const res = await fetch(`/api/tools/${id}`);
-      if (!res.ok) throw new Error('Tool not found');
-      const data = await res.json();
-      setTool(data);
-
-      const initialValues: Record<string, string> = {};
-      data.params.forEach((p: { name: string; default_value: string | null }) => {
-        initialValues[p.name] = p.default_value || '';
-      });
-      setParamValues(initialValues);
-    } catch (err) {
-      setError('工具不存在');
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleExecute() {
     if (!tool) return;
@@ -63,15 +75,37 @@ export default function ToolDetail() {
       return;
     }
 
+    for (const step of tool.steps) {
+      if (step.db_type !== 'mongodb') continue;
+      const config = parseMongoConfig(step.command);
+      const runtimeConfig = config ? omitEmptyMongoUpdateParams(config, paramValues, skipEmptyParams).config : null;
+      const paramError = runtimeConfig ? getMongoRuntimeParamError(runtimeConfig, paramValues) : null;
+      if (paramError) {
+        setError(paramError);
+        return;
+      }
+    }
+
     setExecuting(true);
     setResults([]);
     setError(null);
 
     try {
+      const executeParams = { ...paramValues };
+      for (const param of tool.params) {
+        if (param.param_type !== 'datetime' || !executeParams[param.name]) continue;
+        const date = new Date(executeParams[param.name]);
+        if (Number.isNaN(date.getTime())) {
+          setError(`${param.label} 不是有效的日期时间`);
+          setExecuting(false);
+          return;
+        }
+        executeParams[param.name] = date.toISOString();
+      }
       const res = await fetch(`/api/tools/${tool.id}/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ params: paramValues }),
+        body: JSON.stringify({ params: executeParams, skipEmptyParams }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -79,7 +113,7 @@ export default function ToolDetail() {
       } else {
         setResults(data.results || []);
       }
-    } catch (err) {
+    } catch {
       setError('执行失败');
     } finally {
       setExecuting(false);
@@ -87,12 +121,48 @@ export default function ToolDetail() {
   }
 
   function replaceParams(template: string): string {
-    let result = template;
+    let result = resolveTimeExpressions(template);
     for (const [key, value] of Object.entries(paramValues)) {
       const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
       result = result.replace(regex, value || `<${key}>`);
     }
     return result;
+  }
+
+  function formatStepCommand(dbType: string, command: string): string {
+    if (dbType !== 'mongodb') return replaceParams(command);
+    const config = parseMongoConfig(command);
+    if (!config) return replaceParams(command);
+    const fields = [
+      `数据库: ${config.database}`,
+      `集合: ${config.collection}`,
+      `操作: ${config.operation}`,
+    ];
+    for (const key of ['filter', 'update', 'document', 'documents', 'replacement', 'pipeline', 'projection', 'sort', 'options'] as const) {
+      const value = config[key];
+      if (value && value !== '{}' && value !== '[]') fields.push(`${key}:\n${replaceParams(value)}`);
+    }
+    if (config.operation === 'find') fields.push(`skip: ${config.skip ?? 0}`, `limit: ${config.limit ?? 100}`);
+    return fields.join('\n\n');
+  }
+
+  function getParamInputType(paramType: string): string {
+    if (paramType === 'number') return 'number';
+    if (paramType === 'date') return 'date';
+    if (paramType === 'datetime') return 'datetime-local';
+    return 'text';
+  }
+
+  function updateParamValue(name: string, value: string) {
+    const nextValues = { ...paramValues, [name]: value };
+    setParamValues(nextValues);
+    if (tool) localStorage.setItem(`tool-param-values:${tool.id}`, JSON.stringify(nextValues));
+  }
+
+  function toggleSkipEmptyParam(name: string, checked: boolean) {
+    setSkipEmptyParams(current => checked
+      ? [...current, name]
+      : current.filter(paramName => paramName !== name));
   }
 
   if (loading) {
@@ -150,12 +220,24 @@ export default function ToolDetail() {
                     {param.required && <span className="text-red-500 ml-1">*</span>}
                   </label>
                   <input
-                    type={param.param_type === 'number' ? 'number' : 'text'}
+                    type={getParamInputType(param.param_type)}
                     value={paramValues[param.name] || ''}
-                    onChange={(e) => setParamValues({ ...paramValues, [param.name]: e.target.value })}
+                    onChange={(e) => updateParamValue(param.name, e.target.value)}
                     placeholder={`输入 ${param.label}`}
                     className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
+                  <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-xs text-slate-500">
+                    <input
+                      type="checkbox"
+                      checked={skipEmptyParams.includes(param.name)}
+                      onChange={(event) => toggleSkipEmptyParam(param.name, event.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500"
+                    />
+                    为空时不更新
+                  </label>
+                  {param.param_type === 'datetime' && (
+                    <p className="mt-1 text-xs text-slate-400">按浏览器本地时区输入，执行时转换为 UTC</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -208,7 +290,7 @@ export default function ToolDetail() {
                         )}
                       </div>
                       <pre className="text-sm font-mono text-slate-700 whitespace-pre-wrap break-all">
-                        {replaceParams(step.command)}
+                        {formatStepCommand(step.db_type, step.command)}
                       </pre>
                     </div>
                   );
