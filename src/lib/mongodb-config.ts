@@ -168,20 +168,58 @@ export function getMongoRuntimeParamError(config: MongoStepConfig, params: Recor
   return null;
 }
 
-export function shouldSkipMongoUpdate(
+export function omitEmptyMongoUpdateFields(
   config: MongoStepConfig,
   params: Record<string, string>,
   skipEmptyParams: string[],
-): string | null {
-  if (!['updateOne', 'updateMany'].includes(config.operation)) return null;
-
-  const command = stringifyMongoConfig(config);
-  for (const name of skipEmptyParams) {
-    if (params[name]?.trim()) continue;
-    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp(`\\{\\{\\s*${escapedName}\\s*\\}\\}`).test(command)) return name;
+): { config: MongoStepConfig; omittedParams: string[]; emptyUpdate: boolean } {
+  if (!['updateOne', 'updateMany'].includes(config.operation) || !config.update) {
+    return { config, omittedParams: [], emptyUpdate: false };
   }
-  return null;
+
+  const emptyParams = skipEmptyParams.filter(name => !params[name]?.trim());
+  if (emptyParams.length === 0) return { config, omittedParams: [], emptyUpdate: false };
+
+  const markerPrefix = '__MONGO_OMIT_EMPTY__';
+  const markedUpdate = config.update.replace(/"?\{\{\s*([^}]+?)\s*\}\}"?/g, (match, name: string) => {
+    const normalizedName = name.trim();
+    return emptyParams.includes(normalizedName) ? JSON.stringify(`${markerPrefix}${normalizedName}`) : match;
+  });
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(normalizeMongoJson(markedUpdate));
+  } catch {
+    return { config, omittedParams: [], emptyUpdate: false };
+  }
+
+  const pruned = pruneMongoUpdate(parsed, markerPrefix);
+  const update = pruned && typeof pruned === 'object' && !Array.isArray(pruned)
+    ? pruned as Record<string, unknown>
+    : {};
+  const emptyUpdate = Object.keys(update).length === 0;
+  return {
+    config: { ...config, update: JSON.stringify(update, null, 2) },
+    omittedParams: emptyParams,
+    emptyUpdate,
+  };
+}
+
+function pruneMongoUpdate(value: unknown, markerPrefix: string): unknown {
+  if (typeof value === 'string' && value.includes(markerPrefix)) return undefined;
+  if (Array.isArray(value)) {
+    const items = value.map(item => pruneMongoUpdate(item, markerPrefix)).filter(item => item !== undefined);
+    return items.length > 0 ? items : undefined;
+  }
+  if (!value || typeof value !== 'object') return value;
+
+  const result: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    const pruned = pruneMongoUpdate(child, markerPrefix);
+    if (pruned === undefined) continue;
+    result[key] = pruned;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 export function tryConvertLegacyMongoCommand(command: string): MongoStepConfig | null {

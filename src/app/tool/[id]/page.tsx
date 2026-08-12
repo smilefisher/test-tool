@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ToolWithDetails, ExecuteResult } from '@/lib/types';
-import { getMongoRuntimeParamError, parseMongoConfig, shouldSkipMongoUpdate } from '@/lib/mongodb-config';
+import { getMongoRuntimeParamError, omitEmptyMongoUpdateFields, parseMongoConfig } from '@/lib/mongodb-config';
 import { resolveTimeExpressions } from '@/lib/template';
 
 const DB_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -79,8 +79,9 @@ export default function ToolDetail() {
     for (const step of tool.steps) {
       if (step.db_type !== 'mongodb') continue;
       const config = parseMongoConfig(step.command);
-      if (config && shouldSkipMongoUpdate(config, paramValues, skipEmptyParams)) continue;
-      const paramError = config ? getMongoRuntimeParamError(config, paramValues) : null;
+      const omitted = config ? omitEmptyMongoUpdateFields(config, paramValues, skipEmptyParams) : null;
+      if (omitted?.emptyUpdate) continue;
+      const paramError = omitted ? getMongoRuntimeParamError(omitted.config, paramValues) : null;
       if (paramError) {
         setError(paramError);
         return;
@@ -162,7 +163,7 @@ export default function ToolDetail() {
 
   function toggleSkipEmptyParam(name: string, checked: boolean) {
     setSkipEmptyParams(current => checked
-      ? [...current, name]
+      ? Array.from(new Set([...current, name]))
       : current.filter(paramName => paramName !== name));
   }
 
@@ -216,26 +217,33 @@ export default function ToolDetail() {
             <div className="space-y-4">
               {tool.params.map((param) => (
                 <div key={param.id}>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    {param.label}
-                    {param.required && <span className="text-red-500 ml-1">*</span>}
-                  </label>
+                  <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <label htmlFor={`tool-param-${param.id ?? param.name}`} className="text-sm font-medium text-slate-700">
+                      {param.label}
+                      {param.required && <span className="text-red-500 ml-1">*</span>}
+                      <span className="ml-2 font-mono text-xs font-normal text-slate-400">{`{{${param.name}}}`}</span>
+                    </label>
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-normal text-slate-500">
+                      <input
+                        type="checkbox"
+                        checked={skipEmptyParams.includes(param.name)}
+                        onChange={(event) => toggleSkipEmptyParam(param.name, event.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500"
+                      />
+                      为空时不更新此字段
+                    </label>
+                  </div>
                   <input
+                    id={`tool-param-${param.id ?? param.name}`}
                     type={getParamInputType(param.param_type)}
                     value={paramValues[param.name] || ''}
                     onChange={(e) => updateParamValue(param.name, e.target.value)}
                     placeholder={`输入 ${param.label}`}
                     className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
-                  <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-xs text-slate-500">
-                    <input
-                      type="checkbox"
-                      checked={skipEmptyParams.includes(param.name)}
-                      onChange={(event) => toggleSkipEmptyParam(param.name, event.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500"
-                    />
-                    为空时跳过更新
-                  </label>
+                  {skipEmptyParams.includes(param.name) && !paramValues[param.name]?.trim() && (
+                    <p className="mt-1 text-xs font-medium text-amber-600">当前为空，引用此变量的 MongoDB 更新字段将被移除</p>
+                  )}
                   {param.param_type === 'datetime' && (
                     <p className="mt-1 text-xs text-slate-400">按浏览器本地时区输入，执行时转换为 UTC</p>
                   )}

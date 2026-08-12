@@ -2,7 +2,7 @@ import Redis from 'ioredis';
 import mysql from 'mysql2/promise';
 import { BSON, Document, MongoClient } from 'mongodb';
 import { Connection } from './db';
-import { getMongoConfigError, getMongoRuntimeParamError, MongoStepConfig, normalizeMongoJson, parseMongoConfig, shouldSkipMongoUpdate } from './mongodb-config';
+import { getMongoConfigError, getMongoRuntimeParamError, MongoStepConfig, normalizeMongoJson, omitEmptyMongoUpdateFields, parseMongoConfig, stringifyMongoConfig } from './mongodb-config';
 import { resolveTimeExpressions } from './template';
 
 interface ValidationResult {
@@ -572,24 +572,26 @@ export async function executeTool(
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     const startTime = Date.now();
-    const command = step.command;
+    let command = step.command;
     if (step.db_type === 'mongodb') {
       const mongoConfig = parseMongoConfig(command);
       if (mongoConfig) {
-        const skippedParam = shouldSkipMongoUpdate(mongoConfig, params, skipEmptyParams);
-        if (skippedParam) {
+        const omitted = omitEmptyMongoUpdateFields(mongoConfig, params, skipEmptyParams);
+        if (omitted.emptyUpdate) {
           results.push({
             success: true,
             stepIndex: i,
             dbType: step.db_type,
             command,
-            result: { acknowledged: true, skipped: true, reason: `参数「${skippedParam}」为空，已跳过更新` },
+            result: { acknowledged: true, skipped: true, reason: '移除空参数字段后没有可更新字段' },
             duration: Date.now() - startTime,
           });
           continue;
         }
+        command = stringifyMongoConfig(omitted.config);
       }
-      const paramError = mongoConfig ? getMongoRuntimeParamError(mongoConfig, params) : null;
+      const runtimeConfig = parseMongoConfig(command);
+      const paramError = runtimeConfig ? getMongoRuntimeParamError(runtimeConfig, params) : null;
       if (paramError) {
         results.push({
           success: false,
