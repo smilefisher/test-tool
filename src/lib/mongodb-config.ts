@@ -181,14 +181,14 @@ export function omitEmptyMongoUpdateFields(
   if (emptyParams.length === 0) return { config, omittedParams: [], emptyUpdate: false };
 
   const markerPrefix = '__MONGO_OMIT_EMPTY__';
-  const markedUpdate = config.update.replace(/"?\{\{\s*([^}]+?)\s*\}\}"?/g, (match, name: string) => {
+  const markedUpdate = config.update.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, name: string) => {
     const normalizedName = name.trim();
-    return emptyParams.includes(normalizedName) ? JSON.stringify(`${markerPrefix}${normalizedName}`) : match;
+    return emptyParams.includes(normalizedName) ? `${markerPrefix}${normalizedName}` : match;
   });
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(normalizeMongoJson(markedUpdate));
+    parsed = new UpdateTemplateParser(normalizeMongoJson(markedUpdate), markerPrefix).parse();
   } catch {
     return { config, omittedParams: [], emptyUpdate: false };
   }
@@ -203,6 +203,109 @@ export function omitEmptyMongoUpdateFields(
     omittedParams: emptyParams,
     emptyUpdate,
   };
+}
+
+class UpdateTemplateParser {
+  private position = 0;
+
+  constructor(private readonly input: string, private readonly markerPrefix: string) {}
+
+  parse(): unknown {
+    this.skipWhitespace();
+    const value = this.parseValue();
+    this.skipWhitespace();
+    if (this.position !== this.input.length) throw new Error('Unexpected trailing input');
+    return value;
+  }
+
+  private parseValue(): unknown {
+    this.skipWhitespace();
+    if (this.input.startsWith(this.markerPrefix, this.position)) {
+      this.position += this.markerPrefix.length;
+      while (/[\w.-]/.test(this.peek())) this.position++;
+      return this.markerPrefix;
+    }
+    const character = this.peek();
+    if (character === '{') return this.parseObject();
+    if (character === '[') return this.parseArray();
+    if (character === '"') return this.parseString();
+
+    const end = this.input.slice(this.position).search(/[,}\]]/);
+    const length = end < 0 ? this.input.length - this.position : end;
+    const token = this.input.slice(this.position, this.position + length).trim();
+    this.position += length;
+    if (token.includes(this.markerPrefix)) return this.markerPrefix;
+    return JSON.parse(token);
+  }
+
+  private parseObject(): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    this.position++;
+    this.skipWhitespace();
+    while (this.peek() !== '}') {
+      const key = this.parseString();
+      this.skipWhitespace();
+      this.expect(':');
+      result[key] = this.parseValue();
+      this.skipWhitespace();
+      if (this.peek() === ',') {
+        this.position++;
+        this.skipWhitespace();
+      } else if (this.peek() !== '}') {
+        throw new Error('Expected comma');
+      }
+    }
+    this.position++;
+    return result;
+  }
+
+  private parseArray(): unknown[] {
+    const result: unknown[] = [];
+    this.position++;
+    this.skipWhitespace();
+    while (this.peek() !== ']') {
+      result.push(this.parseValue());
+      this.skipWhitespace();
+      if (this.peek() === ',') {
+        this.position++;
+        this.skipWhitespace();
+      } else if (this.peek() !== ']') {
+        throw new Error('Expected comma');
+      }
+    }
+    this.position++;
+    return result;
+  }
+
+  private parseString(): string {
+    const start = this.position++;
+    while (this.position < this.input.length) {
+      if (this.input[this.position] === '\\') {
+        this.position += 2;
+        continue;
+      }
+      if (this.input[this.position++] === '"') {
+        const raw = this.input.slice(start, this.position);
+        if (raw.includes(this.markerPrefix)) return this.markerPrefix;
+        return JSON.parse(raw);
+      }
+    }
+    throw new Error('Unterminated string');
+  }
+
+  private skipWhitespace(): void {
+    while (/\s/.test(this.peek())) this.position++;
+  }
+
+  private expect(character: string): void {
+    this.skipWhitespace();
+    if (this.peek() !== character) throw new Error(`Expected ${character}`);
+    this.position++;
+  }
+
+  private peek(): string {
+    return this.input[this.position] || '';
+  }
 }
 
 function pruneMongoUpdate(value: unknown, markerPrefix: string): unknown {

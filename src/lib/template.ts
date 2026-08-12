@@ -17,3 +17,16 @@ export function resolveTimeExpressions(template: string, now = new Date()): stri
 export function isTimeExpression(value: string): boolean {
   return /^now\s*(?:[+-]\s*\d+\s*[smhdw])?$/i.test(value.trim());
 }
+
+export function getEmptyReferencedParam(
+  template: string,
+  params: Record<string, string>,
+  skipEmptyParams: string[],
+): string | null {
+  for (const name of skipEmptyParams) {
+    if (params[name]?.trim()) continue;
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`\\{\\{\\s*${escapedName}\\s*\\}\\}`).test(template)) return name;
+  }
+  return null;
+}

@@ -3,7 +3,7 @@ import mysql from 'mysql2/promise';
 import { BSON, Document, MongoClient } from 'mongodb';
 import { Connection } from './db';
 import { getMongoConfigError, getMongoRuntimeParamError, MongoStepConfig, normalizeMongoJson, omitEmptyMongoUpdateFields, parseMongoConfig, stringifyMongoConfig } from './mongodb-config';
-import { resolveTimeExpressions } from './template';
+import { getEmptyReferencedParam, resolveTimeExpressions } from './template';
 
 interface ValidationResult {
   valid: boolean;
@@ -568,15 +568,30 @@ export async function executeTool(
 ): Promise<ExecuteResult[]> {
   const results: ExecuteResult[] = [];
   const outputs = new Map<string, unknown>();
+  const resolvedParams = params;
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     const startTime = Date.now();
     let command = step.command;
+    if (step.db_type === 'redis') {
+      const skippedParam = getEmptyReferencedParam(command, resolvedParams, skipEmptyParams);
+      if (skippedParam) {
+        results.push({
+          success: true,
+          stepIndex: i,
+          dbType: step.db_type,
+          command,
+          result: { acknowledged: true, skipped: true, reason: `参数「${skippedParam}」为空，已跳过 Redis 步骤` },
+          duration: Date.now() - startTime,
+        });
+        continue;
+      }
+    }
     if (step.db_type === 'mongodb') {
       const mongoConfig = parseMongoConfig(command);
       if (mongoConfig) {
-        const omitted = omitEmptyMongoUpdateFields(mongoConfig, params, skipEmptyParams);
+        const omitted = omitEmptyMongoUpdateFields(mongoConfig, resolvedParams, skipEmptyParams);
         if (omitted.emptyUpdate) {
           results.push({
             success: true,
@@ -591,7 +606,7 @@ export async function executeTool(
         command = stringifyMongoConfig(omitted.config);
       }
       const runtimeConfig = parseMongoConfig(command);
-      const paramError = runtimeConfig ? getMongoRuntimeParamError(runtimeConfig, params) : null;
+      const paramError = runtimeConfig ? getMongoRuntimeParamError(runtimeConfig, resolvedParams) : null;
       if (paramError) {
         results.push({
           success: false,
@@ -604,7 +619,7 @@ export async function executeTool(
         break;
       }
     }
-    const resolvedCommand = replaceParams(command, params, outputs);
+    const resolvedCommand = replaceParams(command, resolvedParams, outputs);
 
     try {
       let result: unknown;

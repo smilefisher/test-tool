@@ -21,6 +21,7 @@ export default function ToolDetail() {
   const [results, setResults] = useState<ExecuteResult[]>([]);
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [skipEmptyParams, setSkipEmptyParams] = useState<string[]>([]);
+  const [showParamHelp, setShowParamHelp] = useState(false);
   const [showSteps, setShowSteps] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,7 +96,8 @@ export default function ToolDetail() {
     try {
       const executeParams = { ...paramValues };
       for (const param of tool.params) {
-        if (param.param_type !== 'datetime' || !executeParams[param.name]) continue;
+        if (!executeParams[param.name]) continue;
+        if (param.param_type !== 'datetime') continue;
         const date = new Date(executeParams[param.name]);
         if (Number.isNaN(date.getTime())) {
           setError(`${param.label} 不是有效的日期时间`);
@@ -213,7 +215,18 @@ export default function ToolDetail() {
 
         {tool.params.length > 0 ? (
           <section className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4">参数</h2>
+            <div className="mb-4 flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-slate-800">参数</h2>
+              <button
+                type="button"
+                onClick={() => setShowParamHelp(true)}
+                title="查看参数输入帮助"
+                aria-label="查看参数输入帮助"
+                className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-xs font-bold text-slate-500 hover:border-blue-500 hover:text-blue-600"
+              >
+                ?
+              </button>
+            </div>
             <div className="space-y-4">
               {tool.params.map((param) => (
                 <div key={param.id}>
@@ -230,7 +243,7 @@ export default function ToolDetail() {
                         onChange={(event) => toggleSkipEmptyParam(param.name, event.target.checked)}
                         className="h-4 w-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500"
                       />
-                      为空时不更新此字段
+                    为空时不更新
                     </label>
                   </div>
                   <input
@@ -242,7 +255,7 @@ export default function ToolDetail() {
                     className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                   {skipEmptyParams.includes(param.name) && !paramValues[param.name]?.trim() && (
-                    <p className="mt-1 text-xs font-medium text-amber-600">当前为空，引用此变量的 MongoDB 更新字段将被移除</p>
+                    <p className="mt-1 text-xs font-medium text-amber-600">当前为空：MongoDB 将移除对应更新字段，Redis 将跳过引用该变量的步骤</p>
                   )}
                   {param.param_type === 'datetime' && (
                     <p className="mt-1 text-xs text-slate-400">按浏览器本地时区输入，执行时转换为 UTC</p>
@@ -378,6 +391,34 @@ export default function ToolDetail() {
               })}
             </div>
           </section>
+        )}
+
+        {showParamHelp && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="param-input-help-title"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setShowParamHelp(false);
+            }}
+          >
+            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 id="param-input-help-title" className="text-lg font-semibold text-slate-800">参数输入帮助</h3>
+                  <p className="mt-1 text-sm text-slate-500">输入框填写业务参数；动态时间请在 MongoDB 的日期配置中使用。</p>
+                </div>
+                <button type="button" onClick={() => setShowParamHelp(false)} aria-label="关闭帮助" className="flex h-8 w-8 items-center justify-center rounded-lg text-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700">×</button>
+              </div>
+              <div className="mt-5 space-y-3 text-sm text-slate-700">
+                <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">参数输入框不会解析动态时间表达式。MongoDB Filter 或 Update 中仍可使用 <code className="font-mono">{'{{now}}'}</code>、<code className="font-mono">{'{{now+2h}}'}</code> 等执行时计算的日期模板。</p>
+              </div>
+              <div className="mt-6 flex justify-end">
+                <button type="button" onClick={() => setShowParamHelp(false)} className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600">知道了</button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>
