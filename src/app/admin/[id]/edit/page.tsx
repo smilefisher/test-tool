@@ -46,6 +46,8 @@ export default function EditToolPage() {
   const [paramsList, setParamsList] = useState<ToolParam[]>([]);
   const [steps, setSteps] = useState<Step[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [draggedParamIndex, setDraggedParamIndex] = useState<number | null>(null);
+  const [paramDropIndex, setParamDropIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const id = params.id as string | undefined;
@@ -97,6 +99,20 @@ export default function EditToolPage() {
     const newParams = [...paramsList];
     newParams[index] = { ...newParams[index], [field]: value };
     setParamsList(newParams);
+  }
+
+  function dropParam(targetIndex: number) {
+    if (draggedParamIndex === null || draggedParamIndex === targetIndex) {
+      setDraggedParamIndex(null);
+      setParamDropIndex(null);
+      return;
+    }
+    const newParams = [...paramsList];
+    const [draggedParam] = newParams.splice(draggedParamIndex, 1);
+    newParams.splice(targetIndex, 0, draggedParam);
+    setParamsList(newParams);
+    setDraggedParamIndex(null);
+    setParamDropIndex(null);
   }
 
   function addStep() {
@@ -264,6 +280,7 @@ export default function EditToolPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      <th className="w-10 pb-3 pr-2" aria-label="排序"></th>
                       <th className="pb-3 pr-3">参数名</th>
                       <th className="pb-3 pr-3">标签</th>
                       <th className="pb-3 pr-3">类型</th>
@@ -274,7 +291,42 @@ export default function EditToolPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {paramsList.map((param, index) => (
-                      <tr key={index}>
+                      <tr
+                        key={index}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          setParamDropIndex(index);
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          dropParam(index);
+                        }}
+                        className={`${paramDropIndex === index && draggedParamIndex !== index ? 'bg-blue-50' : ''} ${draggedParamIndex === index ? 'opacity-50' : ''}`}
+                      >
+                        <td className="py-3 pr-2 align-middle">
+                          <button
+                            type="button"
+                            draggable
+                            onDragStart={(event) => {
+                              setDraggedParamIndex(index);
+                              event.dataTransfer.effectAllowed = 'move';
+                              event.dataTransfer.setData('text/plain', String(index));
+                            }}
+                            onDragEnd={() => {
+                              setDraggedParamIndex(null);
+                              setParamDropIndex(null);
+                            }}
+                            className="cursor-grab rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 active:cursor-grabbing"
+                            title="拖动调整参数顺序"
+                            aria-label={`拖动参数 ${param.label || param.name || index + 1} 排序`}
+                          >
+                            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                              <circle cx="7" cy="5" r="1.25" /><circle cx="13" cy="5" r="1.25" />
+                              <circle cx="7" cy="10" r="1.25" /><circle cx="13" cy="10" r="1.25" />
+                              <circle cx="7" cy="15" r="1.25" /><circle cx="13" cy="15" r="1.25" />
+                            </svg>
+                          </button>
+                        </td>
                         <td className="py-3 pr-3">
                           <input
                             type="text"

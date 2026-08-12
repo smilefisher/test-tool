@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ToolWithDetails, ExecuteResult } from '@/lib/types';
-import { getMongoRuntimeParamError, omitEmptyMongoUpdateParams, parseMongoConfig } from '@/lib/mongodb-config';
+import { getMongoRuntimeParamError, parseMongoConfig, shouldSkipMongoUpdate } from '@/lib/mongodb-config';
 import { resolveTimeExpressions } from '@/lib/template';
 
 const DB_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -64,6 +64,7 @@ export default function ToolDetail() {
 
     const missingParams = tool.params
       .filter(p => p.required)
+      .filter(p => !skipEmptyParams.includes(p.name))
       .filter(p => {
         const value = paramValues[p.name];
         return value === undefined || value === null || value === '';
@@ -78,8 +79,8 @@ export default function ToolDetail() {
     for (const step of tool.steps) {
       if (step.db_type !== 'mongodb') continue;
       const config = parseMongoConfig(step.command);
-      const runtimeConfig = config ? omitEmptyMongoUpdateParams(config, paramValues, skipEmptyParams).config : null;
-      const paramError = runtimeConfig ? getMongoRuntimeParamError(runtimeConfig, paramValues) : null;
+      if (config && shouldSkipMongoUpdate(config, paramValues, skipEmptyParams)) continue;
+      const paramError = config ? getMongoRuntimeParamError(config, paramValues) : null;
       if (paramError) {
         setError(paramError);
         return;
@@ -233,7 +234,7 @@ export default function ToolDetail() {
                       onChange={(event) => toggleSkipEmptyParam(param.name, event.target.checked)}
                       className="h-4 w-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500"
                     />
-                    为空时不更新
+                    为空时跳过更新
                   </label>
                   {param.param_type === 'datetime' && (
                     <p className="mt-1 text-xs text-slate-400">按浏览器本地时区输入，执行时转换为 UTC</p>

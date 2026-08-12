@@ -251,6 +251,11 @@ export default function MongoStepEditor({ command, onChange }: MongoStepEditorPr
                 description="now 是执行时刻；支持秒 s、分钟 m、小时 h、天 d、周 w，可使用加减偏移。"
                 code={'{\n  "expires_at": { "$date": "{{now+2h}}" },\n  "updated_at": ISODate("{{now}}"),\n  "start_at": { "$date": "{{now-7d}}" }\n}'}
               />
+              <HelpExample
+                title="Update 示例"
+                description="Filter 用于定位文档，Update 使用 $set 修改字段。执行页勾选某参数的“为空时不更新”后，该参数为空时对应字段会被自动移除。"
+                code={'Filter\n{\n  "_id": ObjectId("{{request_id}}")\n}\n\nUpdate\n{\n  "$set": {\n    "title": "{{title}}",\n    "expires_at": { "$date": "{{expiresAt}}" },\n    "updated_at": { "$date": "{{now}}" }\n  }\n}'}
+              />
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
                 每次执行都会重新计算 <code className="font-mono">{'{{now}}'}</code>。动态时间只用于日期值，不要用于 ObjectId。
               </div>

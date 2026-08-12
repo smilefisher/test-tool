@@ -16,6 +16,9 @@ export async function POST(
 
     const body = await request.json();
     const { params: executeParams, skipEmptyParams = [] } = body;
+    const normalizedSkipEmptyParams = Array.isArray(skipEmptyParams)
+      ? skipEmptyParams.filter(value => typeof value === 'string')
+      : [];
 
     if (!executeParams || typeof executeParams !== 'object') {
       return NextResponse.json({ error: 'Params are required' }, { status: 400 });
@@ -23,6 +26,7 @@ export async function POST(
 
     const missingParams = tool.params
       .filter(p => p.required)
+      .filter(p => !normalizedSkipEmptyParams.includes(p.name))
       .filter(p => {
         const value = executeParams[p.name];
         return value === undefined || value === null || value === '';
@@ -44,7 +48,7 @@ export async function POST(
         output_key: s.output_key || null,
       })),
       executeParams,
-      Array.isArray(skipEmptyParams) ? skipEmptyParams.filter(value => typeof value === 'string') : [],
+      normalizedSkipEmptyParams,
     );
 
     return NextResponse.json({ results });

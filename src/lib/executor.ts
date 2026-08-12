@@ -2,7 +2,7 @@ import Redis from 'ioredis';
 import mysql from 'mysql2/promise';
 import { BSON, Document, MongoClient } from 'mongodb';
 import { Connection } from './db';
-import { getMongoConfigError, getMongoRuntimeParamError, MongoStepConfig, normalizeMongoJson, omitEmptyMongoUpdateParams, parseMongoConfig, stringifyMongoConfig } from './mongodb-config';
+import { getMongoConfigError, getMongoRuntimeParamError, MongoStepConfig, normalizeMongoJson, parseMongoConfig, shouldSkipMongoUpdate } from './mongodb-config';
 import { resolveTimeExpressions } from './template';
 
 interface ValidationResult {
@@ -572,27 +572,24 @@ export async function executeTool(
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     const startTime = Date.now();
-    let command = step.command;
+    const command = step.command;
     if (step.db_type === 'mongodb') {
       const mongoConfig = parseMongoConfig(command);
-      let runtimeConfig = mongoConfig;
       if (mongoConfig) {
-        const omitted = omitEmptyMongoUpdateParams(mongoConfig, params, skipEmptyParams);
-        if (omitted.skipped) {
+        const skippedParam = shouldSkipMongoUpdate(mongoConfig, params, skipEmptyParams);
+        if (skippedParam) {
           results.push({
             success: true,
             stepIndex: i,
             dbType: step.db_type,
-            command: stringifyMongoConfig(omitted.config),
-            result: { acknowledged: true, skipped: true, reason: '所有勾选的空参数均已从更新中移除' },
+            command,
+            result: { acknowledged: true, skipped: true, reason: `参数「${skippedParam}」为空，已跳过更新` },
             duration: Date.now() - startTime,
           });
           continue;
         }
-        runtimeConfig = omitted.config;
-        command = stringifyMongoConfig(omitted.config);
       }
-      const paramError = runtimeConfig ? getMongoRuntimeParamError(runtimeConfig, params) : null;
+      const paramError = mongoConfig ? getMongoRuntimeParamError(mongoConfig, params) : null;
       if (paramError) {
         results.push({
           success: false,
