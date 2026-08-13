@@ -109,7 +109,14 @@ export default function ToolDetail() {
       const res = await fetch(`/api/tools/${tool.id}/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ params: executeParams, skipEmptyParams }),
+        body: JSON.stringify({
+          params: executeParams,
+          paramOptions: Object.fromEntries(
+            tool.params.map(param => [param.name, {
+              omitWhenEmpty: skipEmptyParams.includes(param.name),
+            }]),
+          ),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {

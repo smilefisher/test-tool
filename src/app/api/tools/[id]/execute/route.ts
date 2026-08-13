@@ -15,10 +15,14 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { params: executeParams, skipEmptyParams = [] } = body;
-    const normalizedSkipEmptyParams = Array.isArray(skipEmptyParams)
-      ? skipEmptyParams.filter(value => typeof value === 'string')
+    const { params: executeParams, paramOptions = {}, skipEmptyParams = [] } = body;
+    const optionNames = Object.entries(paramOptions)
+      .filter(([, options]) => options && typeof options === 'object' && (options as { omitWhenEmpty?: unknown }).omitWhenEmpty === true)
+      .map(([name]) => name);
+    const legacyNames = Array.isArray(skipEmptyParams)
+      ? skipEmptyParams.filter((value): value is string => typeof value === 'string')
       : [];
+    const normalizedSkipEmptyParams = Array.from(new Set([...optionNames, ...legacyNames]));
 
     if (!executeParams || typeof executeParams !== 'object') {
       return NextResponse.json({ error: 'Params are required' }, { status: 400 });

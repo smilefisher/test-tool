@@ -156,6 +156,14 @@ export function getMongoRuntimeParamError(config: MongoStepConfig, params: Recor
     const value = config[field];
     if (typeof value !== 'string') continue;
 
+    const unquotedParams = value.matchAll(/:\s*\{\{\s*([^}]+?)\s*\}\}/g);
+    for (const match of unquotedParams) {
+      const paramName = match[1].trim();
+      if (!params[paramName]?.trim()) {
+        return `参数「${paramName}」不能为空；如需忽略对应更新字段，请勾选“为空时不更新”`;
+      }
+    }
+
     const extendedJsonParams = value.matchAll(/"\$(oid|date)"\s*:\s*"\{\{\s*([^}]+?)\s*\}\}"/g);
     const constructorParams = value.matchAll(/(ObjectId|ISODate)\s*\(\s*["']\{\{\s*([^}]+?)\s*\}\}["']\s*\)/g);
     for (const match of [...extendedJsonParams, ...constructorParams]) {
